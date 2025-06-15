@@ -1,40 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# Generador de Códigos de Barras EAN-13
 
-## Getting Started
+Este proyecto es una aplicación web desarrollada con Next.js que permite generar y validar códigos de barras EAN-13, con la capacidad de imprimirlos en formato PDF.
 
-First, run the development server:
+## Características Principales
+
+- Validación de códigos EAN-13
+- Generación de códigos de barras visuales
+- Gestión de múltiples códigos con cantidades personalizables
+- Exportación a PDF con configuración personalizable
+- Interfaz de usuario intuitiva y responsive
+- Detección de códigos duplicados
+- Vista previa de códigos de barras
+
+## Requisitos Previos
+
+- Node.js (versión 14 o superior)
+- npm o yarn
+
+## Instalación
+
+1. Clona el repositorio:
+```bash
+git clone [URL_DEL_REPOSITORIO]
+```
+
+2. Navega al directorio del proyecto:
+```bash
+cd ean13
+```
+
+3. Instala las dependencias:
+```bash
+npm install
+# o
+yarn install
+```
+
+## Ejecución del Proyecto
+
+Para iniciar el servidor de desarrollo:
 
 ```bash
 npm run dev
-# or
+# o
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La aplicación estará disponible en `http://localhost:3000`
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+## Uso
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+1. Ingresa un código EAN-13 de 13 dígitos en el campo de entrada
+2. Especifica la cantidad deseada
+3. Haz clic en "Validar Código"
+4. El código se agregará a la lista si es válido
+5. Puedes ajustar las cantidades en la tabla
+6. Utiliza el botón "Descargar PDF" para exportar los códigos
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+## Configuración del PDF
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+El generador de PDF permite ajustar:
+- Ancho de línea del código de barras
+- Altura del código
+- Tamaño del texto
 
-## Learn More
+## Tecnologías Utilizadas
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js
+- React
+- TypeScript
+- @react-pdf/renderer
+- JsBarcode
+- html2canvas
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+## Estructura del Proyecto
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  ├── components/
+  │   └── PDF-ean13.tsx
+  ├── pages/
+  │   └── index.tsx
+  ├── styles/
+  │   ├── Home.module.css
+  │   └── PDF-ean13.module.css
+  └── utils/
+      └── ean13Generator.ts
+```
 
-## Deploy on Vercel
+## Contribución
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Las contribuciones son bienvenidas. Por favor, sigue estos pasos:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+1. Haz un Fork del proyecto
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+## Licencia
+
+Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+
+## Contacto
+
+[Tu Nombre] - [Tu Email]
+
+Link del Proyecto: [URL_DEL_REPOSITORIO]
