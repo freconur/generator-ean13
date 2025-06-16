@@ -25,9 +25,9 @@ interface Props {
 }
 
 // Función para formatear fechas en formato español
-const formatDate = (timestamp: any) => {
+const formatDate = (timestamp: Date | number): string => {
 	if (!timestamp) return '-';
-	const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+	const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
 	return date.toLocaleDateString('es-ES', {
 		year: 'numeric',
 		month: 'long',

@@ -54,7 +54,7 @@ export default function EAN13Generator({ initialCode = '' }: EAN13GeneratorProps
           margin: 10
         });
         setError('');
-      } catch (err) {
+      } catch {
         setError('Error al generar el código de barras');
       }
     }

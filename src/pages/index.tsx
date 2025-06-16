@@ -22,20 +22,13 @@ export default function Home() {
   const quantityInputRef = useRef<HTMLInputElement>(null);
   const validateButtonRef = useRef<HTMLButtonElement>(null);
   const [fadeIn, setFadeIn] = useState(false);
-  // Estado para almacenar el código ingresado
   const [inputCode, setInputCode] = useState<string>('');
-  // Estado para almacenar si el código es válido
   const [isValid, setIsValid] = useState<boolean | null>(null);
-  // Estado para almacenar mensajes de error
   const [error, setError] = useState<string>('');
-  // Estado para almacenar la cantidad de repeticiones
   const [quantity, setQuantity] = useState<number>(1);
   const [tempQuantity, setTempQuantity] = useState<string>('1');
-  // Estado para almacenar el array de códigos
   const [barcodes, setBarcodes] = useState<BarcodeItem[]>([]);
-  // Estado para controlar la visibilidad del modal
   const [showModal, setShowModal] = useState<boolean>(false);
-  // Estado para almacenar el código pendiente de confirmación
   const [pendingCode, setPendingCode] = useState<{code: string, quantity: number} | null>(null);
 
   useEffect(() => {
