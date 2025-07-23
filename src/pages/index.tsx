@@ -1,9 +1,11 @@
 import Head from 'next/head';
-import { useState, useRef, useEffect } from 'react';
-import Barcode from 'react-barcode';
+import { useState, useEffect } from 'react';
 import styles from '../styles/Home.module.css';
-import { validateEAN13 } from '../utils/ean13Generator';
 import { PdfImprimir } from '@/components/PDF-ean13';
+import BarcodeForm from '@/components/BarcodeForm';
+import Footer from '@/components/Footer';
+import Navbar from '@/components/Navbar';
+import { getCurrencyCode, getCurrencySymbol, commonCurrencies, getLocalizationDebugInfo } from '../utils/formatPrice';
 
 // Interfaz para el tipo de código de barras
 interface BarcodeItem {
@@ -11,6 +13,10 @@ interface BarcodeItem {
   quantity: number;
   isValid: boolean;
   isDuplicate?: boolean;
+  description?: string;
+  price?: number;
+  hasDescription: boolean; // Flag para indicar si se habilitó descripción
+  hasPrice: boolean; // Flag para indicar si se habilitó precio
 }
 
 /**
@@ -18,238 +24,45 @@ interface BarcodeItem {
  * Permite validar códigos EAN-13 y mostrar su representación en código de barras
  */
 export default function Home() {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const quantityInputRef = useRef<HTMLInputElement>(null);
-  const validateButtonRef = useRef<HTMLButtonElement>(null);
   const [fadeIn, setFadeIn] = useState(false);
-  const [inputCode, setInputCode] = useState<string>('');
-  const [isValid, setIsValid] = useState<boolean | null>(null);
-  const [error, setError] = useState<string>('');
-  const [quantity, setQuantity] = useState<number>(1);
-  const [tempQuantity, setTempQuantity] = useState<string>('1');
   const [barcodes, setBarcodes] = useState<BarcodeItem[]>([]);
-  const [showModal, setShowModal] = useState<boolean>(false);
-  const [pendingCode, setPendingCode] = useState<{code: string, quantity: number} | null>(null);
+  const [enableDescription, setEnableDescription] = useState<boolean>(false);
+  const [enablePrice, setEnablePrice] = useState<boolean>(false);
+  const [showPDFPreview, setShowPDFPreview] = useState<boolean>(false);
+  const [detectedCurrency, setDetectedCurrency] = useState<{ code: string; symbol: string }>({ code: '', symbol: '' });
+  const [useManualCurrency, setUseManualCurrency] = useState<boolean>(false);
+  const [manualCurrencyCode, setManualCurrencyCode] = useState<string>('');
+  const [customCurrencyInput, setCustomCurrencyInput] = useState<string>('');
+  const [showDebugInfo, setShowDebugInfo] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+
+  // Obtener la moneda actual (manual o automática)
+  const getCurrentCurrency = () => {
+    if (useManualCurrency) {
+      return manualCurrencyCode || customCurrencyInput || detectedCurrency.code;
+    }
+    return detectedCurrency.code;
+  };
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
     // Activar el efecto de fade después de que el componente se monte
     setFadeIn(true);
-  }, []);
-
-  /**
-   * Verifica si un código ya existe en el array
-   */
-  const isCodeDuplicate = (code: string): boolean => {
-    return barcodes.some(item => item.code === code);
-  };
-
-  /**
-   * Marca todos los códigos duplicados en el array
-   */
-  const markDuplicates = (code: string) => {
-    setBarcodes(prev => prev.map(item => ({
-      ...item,
-      isDuplicate: item.code === code
-    })));
-  };
-
-  /**
-   * Maneja los cambios en el campo de entrada
-   * - Filtra caracteres no numéricos
-   * - Limita a 13 dígitos
-   * - Resetea estados de validación
-   * - Hace focus al input de cantidad cuando se completa el código
-   */
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 13);
-    setInputCode(value);
-    setError('');
-    setIsValid(null);
-
-    // Si el código tiene 13 dígitos, hacer focus al input de cantidad y limpiar su valor
-    if (value.length === 13 && quantityInputRef.current) {
-      setTempQuantity('');
-      setQuantity(1);
-      quantityInputRef.current.focus();
-    }
-  };
-
-  /**
-   * Maneja los cambios en el campo de cantidad
-   * - Asegura que sea un número positivo
-   * - Limita a un máximo de 100
-   */
-  const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/[^0-9]/g, '');
-    setTempQuantity(value);
-    if (value === '') {
-      return;
-    }
-    const numValue = parseInt(value);
-    if (numValue > 0) {
-      setQuantity(Math.min(numValue, 100));
-    }
-  };
-
-  const handleQuantityBlur = () => {
-    if (tempQuantity === '') {
-      setTempQuantity('1');
-      setQuantity(1);
-    }
-  };
-
-  /**
-   * Maneja el evento focus del input de cantidad
-   * - Limpia el valor actual para permitir una nueva entrada
-   */
-  const handleQuantityFocus = () => {
-    setTempQuantity('');
-  };
-
-  /**
-   * Maneja el evento keyDown del input de cantidad
-   * - Si se presiona Enter y hay un valor válido, activa el botón de validar
-   */
-  const handleQuantityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && tempQuantity && parseInt(tempQuantity) > 0) {
-      e.preventDefault();
-      validateButtonRef.current?.click();
-    }
-  };
-
-  /**
-   * Maneja el cambio de cantidad en la tabla de códigos
-   */
-  const handleTableQuantityChange = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
-    const value = e.target.value.replace(/[^0-9]/g, '');
     
-    if (value === '') {
-      setBarcodes(prev => prev.map((barcode, i) => 
-        i === index ? { ...barcode, quantity: 0 } : barcode
-      ));
-      return;
+    // Detectar la moneda del usuario
+    try {
+      const currencyCode = getCurrencyCode();
+      const currencySymbol = getCurrencySymbol();
+      setDetectedCurrency({ code: currencyCode, symbol: currencySymbol });
+      
+      // Obtener información de debug
+      const debug = getLocalizationDebugInfo();
+      setDebugInfo(debug);
+      console.log('🔍 Información de localización:', debug);
+    } catch (error) {
+      console.warn('Error detectando moneda:', error);
+      setDetectedCurrency({ code: 'EUR', symbol: '€' });
     }
-
-    const numValue = parseInt(value);
-    if (numValue > 0) {
-      setBarcodes(prev => prev.map((barcode, i) => 
-        i === index ? { ...barcode, quantity: Math.min(numValue, 100) } : barcode
-      ));
-    }
-  };
-
-  /**
-   * Maneja el evento blur del input de cantidad en la tabla
-   */
-  const handleTableQuantityBlur = (e: React.FocusEvent<HTMLInputElement>, index: number) => {
-    const value = e.target.value;
-    if (value === '' || parseInt(value) <= 0) {
-      setBarcodes(prev => prev.map((barcode, i) => 
-        i === index ? { ...barcode, quantity: 1 } : barcode
-      ));
-    }
-  };
-
-  /**
-   * Agrega el código al array
-   */
-  const addCode = (code: string, quantity: number) => {
-    setBarcodes(prev => [...prev, { 
-      code, 
-      quantity, 
-      isValid: true,
-      isDuplicate: false 
-    }]);
-    setInputCode('');
-    setQuantity(1);
-  };
-
-  /**
-   * Verifica si un código ya existe en el array y retorna su cantidad
-   */
-  const getExistingQuantity = (code: string): number => {
-    const existingItem = barcodes.find(item => item.code === code);
-    return existingItem ? existingItem.quantity : 0;
-  };
-
-  /**
-   * Valida el código EAN-13 ingresado y lo agrega al array
-   * - Verifica la longitud del código
-   * - Valida el código usando el algoritmo EAN-13
-   * - Agrega el código y su cantidad al array si es válido
-   */
-  const handleValidateCode = () => {
-    if (inputCode.length !== 13) {
-      setError('El código debe tener 13 dígitos');
-      setIsValid(false);
-      return;
-    }
-
-    const isValidCode = validateEAN13(inputCode);
-    setIsValid(isValidCode);
-
-    if (isValidCode) {
-      if (isCodeDuplicate(inputCode)) {
-        setPendingCode({ code: inputCode, quantity });
-        setShowModal(true);
-        return;
-      }
-
-      addCode(inputCode, quantity);
-      setTempQuantity('1');
-      setQuantity(1);
-      if (inputRef.current) {
-        inputRef.current.focus();
-      }
-    }
-  };
-
-  /**
-   * Maneja la confirmación del modal
-   */
-  const handleModalConfirm = () => {
-    if (pendingCode) {
-      setBarcodes(prev => prev.map(item => {
-        if (item.code === pendingCode.code) {
-          return {
-            ...item,
-            quantity: item.quantity + pendingCode.quantity
-          };
-        }
-        return item;
-      }));
-      setShowModal(false);
-      setPendingCode(null);
-    }
-  };
-
-  /**
-   * Maneja la cancelación del modal
-   */
-  const handleModalCancel = () => {
-    setShowModal(false);
-    setPendingCode(null);
-  };
-
-  /**
-   * Elimina un código del array
-   */
-  const handleRemoveCode = (index: number) => {
-    setBarcodes(prev => {
-      const newBarcodes = prev.filter((_, i) => i !== index);
-      // Actualizar el estado de duplicados después de eliminar
-      const codes = newBarcodes.map(item => item.code);
-      return newBarcodes.map(item => ({
-        ...item,
-        isDuplicate: codes.filter(code => code === item.code).length > 1
-      }));
-    });
-  };
-
-  console.log('barcodes', barcodes);
+  }, []);
   return (
     <div className={`${styles.container} ${fadeIn ? styles.fadeIn : ''}`}>
       <Head>
@@ -258,136 +71,269 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className={styles.main}>
-      <h1 className={styles.title}>
-        Generador de Código de Barras EAN-13
-        </h1>
-        <PdfImprimir barcodes={barcodes}/>
-        
+      <Navbar />
 
-        {/* Contenedor principal de la aplicación */}
-        <div className={styles.codeContainer}>
-          {/* Grupo de entrada y botón de validación */}
-          <div className={styles.inputGroup}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputCode}
-              onChange={handleInputChange}
-              placeholder="Ingrese el código EAN-13"
-              className={styles.input}
-            />
-            <input
-              ref={quantityInputRef}
-              type="text"
-              value={tempQuantity}
-              onChange={handleQuantityChange}
-              onBlur={handleQuantityBlur}
-              onFocus={handleQuantityFocus}
-              onKeyDown={handleQuantityKeyDown}
-              className={styles.quantityInput}
-              pattern="[1-9][0-9]*"
-              inputMode="numeric"
-            />
-            <button 
-              ref={validateButtonRef}
-              onClick={handleValidateCode}
-              className={styles.validateButton}
+      <main className={styles.main} id="generator">
+        <h1 className={styles.title}>
+          Plantilla para impresion de codigo de barras EAN-13
+        </h1>
+        
+        {/* Indicador de moneda detectada */}
+        {detectedCurrency.code && (
+          <div style={{ 
+            background: '#f0f8ff', 
+            border: '1px solid #0066cc', 
+            borderRadius: '8px', 
+            padding: '8px 12px', 
+            margin: '10px 0',
+            fontSize: '14px',
+            color: '#0066cc'
+          }}>
+            💰 Moneda detectada: <strong>{detectedCurrency.symbol} ({detectedCurrency.code})</strong>
+            
+            {/* Botón para mostrar información de debug */}
+            <button
+              onClick={() => setShowDebugInfo(!showDebugInfo)}
+              style={{
+                marginLeft: '10px',
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'transparent',
+                border: '1px solid #0066cc',
+                borderRadius: '4px',
+                color: '#0066cc',
+                cursor: 'pointer'
+              }}
+              title="Ver información de detección para diagnosticar problemas"
             >
-              Validar Código
+              {showDebugInfo ? '🔼 Ocultar detalles' : '🔽 Ver detalles'}
             </button>
           </div>
-
-          {/* Mensaje de error si existe */}
-          {error && (
-            <p className={styles.error}>{error}</p>
-          )}
-
-          {/* Modal de confirmación */}
-          {showModal && pendingCode && (
-            <div className={styles.modalOverlay}>
-              <div className={styles.modal}>
-                <h3>¡Código Duplicado!</h3>
-                <p>
-                  Este código ya existe en la lista con {getExistingQuantity(pendingCode.code)} unidades.
-                  ¿Desea agregar {pendingCode.quantity} unidades más?
-                </p>
-                <div className={styles.modalButtons}>
-                  <button onClick={handleModalConfirm} className={styles.modalConfirmButton}>
-                    Sí, Agregar
-                  </button>
-                  <button onClick={handleModalCancel} className={styles.modalCancelButton}>
-                    Cancelar
-                  </button>
-                </div>
-              </div>
+        )}
+        
+        {/* Información de debug expandible */}
+        {showDebugInfo && debugInfo && (
+          <div style={{
+            background: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '8px',
+            padding: '12px',
+            margin: '10px 0',
+            fontSize: '13px',
+            fontFamily: 'monospace'
+          }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#856404' }}>
+              🔍 Información de Detección de Localización
+            </h4>
+            <div style={{ lineHeight: '1.6' }}>
+              <div><strong>Idioma principal:</strong> {debugInfo.primaryLocale}</div>
+              <div><strong>Todos los idiomas:</strong> {debugInfo.allLanguages.join(', ')}</div>
+              <div><strong>Región extraída:</strong> {debugInfo.extractedRegion}</div>
+              <div><strong>Zona horaria:</strong> {debugInfo.timeZone}</div>
+              <div><strong>Moneda detectada:</strong> {debugInfo.detectedCurrency}</div>
             </div>
-          )}
-
-          {/* Lista de códigos guardados */}
-          {barcodes.length > 0 && (
-            <div className={styles.savedCodesContainer}>
-              <h2 className={styles.subtitle}>Códigos Guardados</h2>
-              <table className={styles.barcodesTable}>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Código EAN</th>
-                    <th>Imagen</th>
-                    <th>Cantidad</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {barcodes.map((item, index) => (
-                    <tr key={index} className={item.isDuplicate ? styles.duplicateRow : ''}>
-                      <td>{index + 1}</td>
-                      <td>{item.code}</td>
-                      <td>
-                        <div className={styles.barcodeWrapper}>
-                          <Barcode 
-                            value={item.code}
-                            width={1.5}
-                            height={80}
-                            fontSize={14}
-                            margin={0}
-                            displayValue={true}
-                            background="#ffffff"
-                          />
-                        </div>
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          value={item.quantity}
-                          onChange={(e) => handleTableQuantityChange(e, index)}
-                          onBlur={(e) => handleTableQuantityBlur(e, index)}
-                          className={styles.quantityInput}
-                          pattern="[1-9][0-9]*"
-                          inputMode="numeric"
-                          min="1"
-                        />
-                      </td>
-                      <td>
-                        <button 
-                          onClick={() => handleRemoveCode(index)}
-                          className={styles.removeButton}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
+            <div style={{
+              marginTop: '10px',
+              padding: '8px',
+              background: '#d1ecf1',
+              borderRadius: '4px',
+              fontSize: '12px',
+              color: '#0c5460'
+            }}>
+              <strong>💡 ¿Moneda incorrecta?</strong><br/>
+              Si estás en Lima, Perú pero detecta EUR en lugar de PEN, verifica:<br/>
+              • Tu zona horaria debería ser "America/Lima"<br/>
+              • Tu idioma puede estar configurado como "es-ES" (España) en lugar de "es-PE" (Perú)<br/>
+              • Puedes usar la configuración manual de moneda para solucionarlo
+            </div>
+          </div>
+        )}
+        
+        {/* Configuración manual de moneda */}
+        <div style={{
+          background: '#f8f9fa',
+          border: '1px solid #dee2e6',
+          borderRadius: '8px',
+          padding: '15px',
+          margin: '10px 0',
+          fontSize: '14px'
+        }}>
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={useManualCurrency}
+                onChange={(e) => {
+                  setUseManualCurrency(e.target.checked);
+                  if (!e.target.checked) {
+                    setManualCurrencyCode('');
+                    setCustomCurrencyInput('');
+                  }
+                }}
+                style={{ marginRight: '8px' }}
+              />
+              <strong>⚙️ Configurar moneda manualmente</strong>
+            </label>
+          </div>
+          
+          {useManualCurrency && (
+            <div style={{ marginLeft: '20px' }}>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Seleccionar moneda común:
+                </label>
+                <select
+                  value={manualCurrencyCode}
+                  onChange={(e) => {
+                    setManualCurrencyCode(e.target.value);
+                    setCustomCurrencyInput(''); // Limpiar input personalizado
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    border: '1px solid #ced4da',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">-- Seleccionar moneda --</option>
+                  {commonCurrencies.map((currency) => (
+                    <option key={currency.code} value={currency.code}>
+                      {currency.symbol} {currency.code} - {currency.name}
+                    </option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </div>
+              
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  O escribir código de moneda personalizado:
+                </label>
+                <input
+                  type="text"
+                  value={customCurrencyInput}
+                  onChange={(e) => {
+                    setCustomCurrencyInput(e.target.value.toUpperCase());
+                    setManualCurrencyCode(''); // Limpiar selector
+                  }}
+                  placeholder="Ej: USD, EUR, GBP..."
+                  maxLength={3}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    border: '1px solid #ced4da',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+              
+              {/* Vista previa de la moneda seleccionada */}
+              {(manualCurrencyCode || customCurrencyInput) && (
+                <div style={{
+                  background: '#e8f5e8',
+                  border: '1px solid #28a745',
+                  borderRadius: '4px',
+                  padding: '8px',
+                  fontSize: '13px',
+                  color: '#155724'
+                }}>
+                  ✅ Moneda configurada: <strong>
+                    {getCurrencySymbol(getCurrentCurrency())} ({getCurrentCurrency()})
+                  </strong>
+                </div>
+              )}
             </div>
           )}
         </div>
+        
+        <BarcodeForm
+          barcodes={barcodes}
+          setBarcodes={setBarcodes}
+          enableDescription={enableDescription}
+          setEnableDescription={setEnableDescription}
+          enablePrice={enablePrice}
+          setEnablePrice={setEnablePrice}
+          showPDFPreview={showPDFPreview}
+          setShowPDFPreview={setShowPDFPreview}
+          customCurrency={useManualCurrency ? getCurrentCurrency() : undefined}
+        />
+        <PdfImprimir 
+          barcodes={barcodes} 
+          enableDescription={enableDescription}
+          enablePrice={enablePrice}
+          showPDFPreview={showPDFPreview}
+          onTogglePDFPreview={setShowPDFPreview}
+          customCurrency={useManualCurrency ? getCurrentCurrency() : undefined}
+        />
+        
+        {/* Sección de características */}
+        <section id="features" className={styles.section}>
+          <h2 className={styles.sectionTitle}>⚡ Características</h2>
+          <div className={styles.featuresGrid}>
+            <div className={styles.featureCard}>
+              <div className={styles.featureIcon}>🌍</div>
+              <h3>Soporte Global</h3>
+              <p>Detección automática de moneda basada en tu ubicación</p>
+            </div>
+            <div className={styles.featureCard}>
+              <div className={styles.featureIcon}>📄</div>
+              <h3>Exportación PDF</h3>
+              <p>Genera PDFs profesionales listos para imprimir</p>
+            </div>
+            <div className={styles.featureCard}>
+              <div className={styles.featureIcon}>⚙️</div>
+              <h3>Personalizable</h3>
+              <p>Ajusta espaciado, altura y formato según tus necesidades</p>
+            </div>
+            <div className={styles.featureCard}>
+              <div className={styles.featureIcon}>📱</div>
+              <h3>Responsive</h3>
+              <p>Funciona perfectamente en todos los dispositivos</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Sección de ayuda */}
+        <section id="help" className={styles.section}>
+          <h2 className={styles.sectionTitle}>❓ Ayuda</h2>
+          <div className={styles.helpContent}>
+            <div className={styles.helpCard}>
+              <h3>¿Cómo usar el generador?</h3>
+              <ol>
+                <li>Ingresa un código EAN-13 válido de 13 dígitos</li>
+                <li>Opcionalmente agrega descripción y precio</li>
+                <li>Ajusta la cantidad de códigos a generar</li>
+                <li>Configura el formato en la sección de ajustes</li>
+                <li>Descarga tu PDF listo para imprimir</li>
+              </ol>
+            </div>
+            <div className={styles.helpCard}>
+              <h3>¿Qué es un código EAN-13?</h3>
+              <p>Es un estándar internacional de identificación de productos mediante códigos de barras de 13 dígitos, utilizado globalmente en el comercio minorista.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Sección acerca de */}
+        <section id="about" className={styles.section}>
+          <h2 className={styles.sectionTitle}>ℹ️ Acerca de</h2>
+          <div className={styles.aboutContent}>
+            <p>
+              EAN-13 Generator es una herramienta profesional diseñada para crear códigos de barras 
+              de alta calidad con soporte para múltiples monedas y configuraciones personalizables.
+            </p>
+            <p>
+              Desarrollado con las últimas tecnologías web para garantizar la mejor experiencia 
+              de usuario en todos los dispositivos.
+            </p>
+          </div>
+        </section>
+        
+        
       </main>
 
-      <footer className={styles.footer}>
-        <p>Desarrollado con Next.js</p>
-      </footer>
+      <Footer />
     </div>
   );
-} 
+}
