@@ -1,11 +1,25 @@
 import { useState, useRef, useEffect } from 'react';
-import Barcode from 'react-barcode';
+import { createPortal } from 'react-dom';
+import { useRouter } from 'next/router';
 import styles from '../styles/Home.module.css';
+import ExcelImportModal from './ExcelImportModal';
+import BarcodeReaderModal from './BarcodeReaderModal';
 import { validateEAN13 } from '../utils/ean13Generator';
 import { formatPrice } from '../utils/formatPrice';
+import { useAuth } from '../context/AuthContext';
+import { useLimits } from '../hooks/useLimits';
+import { db } from '../utils/firebase';
+import { collection, doc, setDoc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { saveItemsSubcollection } from './BarcodeGeneratorWorkspace';
 
-// Interfaz para el tipo de código de barras
+import { BarcodeSettings } from './PDF-ean13';
+
+const sanitizeInput = (text: string): string => {
+  return text.replace(/[<>]/g, '').trim();
+};
+
 interface BarcodeItem {
+  id?: string;
   code: string;
   quantity: number;
   isValid: boolean;
@@ -14,7 +28,79 @@ interface BarcodeItem {
   price?: number;
   hasDescription: boolean;
   hasPrice: boolean;
+  print?: boolean;
 }
+
+const fuzzyMatch = (text: string, queryText: string): boolean => {
+  if (!queryText) return true;
+  const cleanText = text.toLowerCase();
+  const cleanQuery = queryText.toLowerCase().trim();
+  
+  // 1. Dividir la consulta por palabras
+  const tokens = cleanQuery.split(/\s+/).filter(t => t.length > 0);
+  if (tokens.length === 0) return true;
+
+  // 2. Verificar que todas las palabras coincidan en el texto (intersección AND)
+  return tokens.every(token => {
+    // Coincidencia exacta de subcadena
+    if (cleanText.includes(token)) return true;
+
+    // Para términos muy cortos (<=2 letras), no permitir aproximación difusa para evitar ruido
+    if (token.length <= 2) return false;
+
+    // Tolerancia a errores ortográficos (Levenshtein): max 1 error para largo 3-4, max 2 errores para >=5
+    const maxDistance = token.length <= 4 ? 1 : 2;
+    
+    // Separar el texto en palabras individuales
+    const textWords = cleanText.split(/[^a-z0-9ñáéíóú]/).filter(w => w.length > 0);
+    return textWords.some(word => {
+      if (Math.abs(word.length - token.length) > maxDistance) return false;
+      
+      // Matriz de Levenshtein optimizada
+      let prevRow = Array.from({ length: token.length + 1 }, (_, k) => k);
+      let currentRow = [];
+      
+      for (let i = 1; i <= word.length; i++) {
+        currentRow = [i];
+        for (let j = 1; j <= token.length; j++) {
+          const cost = word[i - 1] === token[j - 1] ? 0 : 1;
+          currentRow.push(Math.min(
+            currentRow[j - 1] + 1,       // Inserción
+            prevRow[j] + 1,              // Eliminación
+            prevRow[j - 1] + cost        // Sustitución
+          ));
+        }
+        prevRow = currentRow;
+      }
+      
+      const distance = prevRow[token.length];
+      return distance <= maxDistance;
+    });
+  });
+};
+
+const highlightText = (text: string, queryText: string) => {
+  if (!queryText) return <span>{text}</span>;
+  const cleanQuery = queryText.toLowerCase().trim();
+  const tokens = cleanQuery.split(/\s+/).filter(t => t.length > 0);
+  if (tokens.length === 0) return <span>{text}</span>;
+
+  const escapedTokens = tokens.map(t => t.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTokens.join('|')})`, 'gi');
+  const parts = text.split(regex);
+
+  return (
+    <span>
+      {parts.map((part, i) => 
+        regex.test(part) ? (
+          <mark key={i} style={{ backgroundColor: '#fef08a', color: '#1e293b', padding: '0 2px', borderRadius: '2px' }}>{part}</mark>
+        ) : (
+          part
+        )
+      )}
+    </span>
+  );
+};
 
 interface BarcodeFormProps {
   barcodes: BarcodeItem[];
@@ -26,6 +112,16 @@ interface BarcodeFormProps {
   showPDFPreview: boolean;
   setShowPDFPreview: React.Dispatch<React.SetStateAction<boolean>>;
   customCurrency?: string;
+  barcodeSettings: BarcodeSettings;
+  onImportCSV: (items: BarcodeItem[]) => void;
+  loadedBatchId?: string | null;
+  loadedBatchName?: string | null;
+  onSaveBatch?: (name?: string, overwrite?: boolean) => Promise<void>;
+  isSavingBatchParent?: boolean;
+  isDashboard?: boolean;
+  onOpenCurrencyModal?: () => void;
+  isBatchExceeded?: boolean;
+  userBatchesCount?: number;
 }
 
 export default function BarcodeForm({
@@ -37,13 +133,40 @@ export default function BarcodeForm({
   setEnablePrice,
   showPDFPreview,
   setShowPDFPreview,
-  customCurrency
+  customCurrency,
+  barcodeSettings,
+  onImportCSV,
+  loadedBatchId,
+  loadedBatchName,
+  onSaveBatch,
+  isSavingBatchParent,
+  isDashboard,
+  onOpenCurrencyModal,
+  isBatchExceeded = false,
+  userBatchesCount = 0
 }: BarcodeFormProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const quantityInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLInputElement>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const validateButtonRef = useRef<HTMLButtonElement>(null);
+  const editingInputRef = useRef<HTMLInputElement>(null);
+  
+  const { user, profile, setIsAuthModalOpen } = useAuth();
+  const { limits } = useLimits();
+  const isPro = profile?.subscription?.tier === 'pro' &&
+                profile?.subscription?.status === 'active' &&
+                (!profile?.subscription?.expiresAt ||
+                 Date.now() < (profile.subscription.expiresAt < 99999999999 ? profile.subscription.expiresAt * 1000 : profile.subscription.expiresAt));
+  
+  const maxCodes = !user 
+    ? limits.guest.maxCodesPerBatch 
+    : (isPro ? limits.pro.maxCodesPerBatch : limits.free.maxCodesPerBatch);
+  
+  const isReadOnly = barcodes.length > maxCodes || isBatchExceeded;
+
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
+  const isSaving = isSavingBatchParent !== undefined ? isSavingBatchParent : isSavingBatch;
   
   const [inputCode, setInputCode] = useState<string>('');
   const [isValid, setIsValid] = useState<boolean | null>(null);
@@ -56,51 +179,67 @@ export default function BarcodeForm({
   const [pendingCode, setPendingCode] = useState<{code: string, quantity: number, description?: string, price?: number} | null>(null);
   const [wasPreviewOpen, setWasPreviewOpen] = useState<boolean>(false);
   const [tempTableQuantities, setTempTableQuantities] = useState<{[key: number]: string}>({});
-  const [barcodeHeight, setBarcodeHeight] = useState<number>(80);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
+  const [showInvalidModal, setShowInvalidModal] = useState<boolean>(false);
+  const [invalidCodeAttempt, setInvalidCodeAttempt] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showGs1RedirectModal, setShowGs1RedirectModal] = useState<boolean>(false);
+  const [editingDescIndex, setEditingDescIndex] = useState<number | null>(null);
+  const [isReaderOpen, setIsReaderOpen] = useState<boolean>(false);
+  const [isOptionsDropdownOpen, setIsOptionsDropdownOpen] = useState<boolean>(false);
+  const optionsDropdownRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * Determina si los checkboxes deben estar deshabilitados basándose en los códigos existentes
-   */
-  const getCheckboxStates = () => {
-    if (barcodes.length === 0) {
-      return {
-        shouldDisableDescription: false,
-        shouldDisablePrice: false,
-        shouldEnableDescription: false,
-        shouldEnablePrice: false
-      };
-    }
-
-    const firstCode = barcodes[0];
-    const formatHasDescription = firstCode.hasDescription;
-    const formatHasPrice = firstCode.hasPrice;
-
-    return {
-      shouldDisableDescription: true,
-      shouldDisablePrice: true,
-      shouldEnableDescription: formatHasDescription,
-      shouldEnablePrice: formatHasPrice
-    };
-  };
+  // Estados para el Escáner Inteligente (Asistente de Impresión y Selección)
+  const [flashingIndex, setFlashingIndex] = useState<number | null>(null);
+  const [showQuickPrintConfigModal, setShowQuickPrintConfigModal] = useState<boolean>(false);
+  const [showQuickAddModal, setShowQuickAddModal] = useState<boolean>(false);
+  const [scannedCodeToInsert, setScannedCodeToInsert] = useState<string>('');
+  const [pendingEditCodeIndex, setPendingEditCodeIndex] = useState<number | null>(null);
+  const [quickAddQty, setQuickAddQty] = useState<number>(1);
+  const [quickAddDesc, setQuickAddDesc] = useState<string>('');
+  const [quickAddPrice, setQuickAddPrice] = useState<string>('');
 
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (optionsDropdownRef.current && !optionsDropdownRef.current.contains(event.target as Node)) {
+        setIsOptionsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
     if (inputRef.current) {
       inputRef.current.focus();
     }
   }, []);
 
-  // Efecto para auto-habilitar checkboxes basándose en códigos existentes
   useEffect(() => {
-    const checkboxStates = getCheckboxStates();
-    
-    if (checkboxStates.shouldEnableDescription && !enableDescription) {
-      setEnableDescription(true);
+    if (mounted && router.query.addCode) {
+      const code = router.query.addCode as string;
+      if (code.length === 13 && !barcodes.some(item => item.code === code)) {
+        addCode(code, 1, 'código gs1 autogenerado', 0);
+        router.replace(
+          { pathname: router.pathname, query: { ...router.query, addCode: undefined } },
+          undefined,
+          { shallow: true }
+        );
+      }
     }
-    
-    if (checkboxStates.shouldEnablePrice && !enablePrice) {
-      setEnablePrice(true);
+  }, [mounted, router.query.addCode, barcodes]);
+
+  useEffect(() => {
+    if (editingDescIndex !== null && editingInputRef.current) {
+      editingInputRef.current.focus();
     }
-  }, [barcodes, enableDescription, enablePrice, setEnableDescription, setEnablePrice]);
+  }, [editingDescIndex]);
 
   /**
    * Verifica si un código ya existe en el array
@@ -134,7 +273,16 @@ export default function BarcodeForm({
     }
     const numValue = parseInt(value);
     if (numValue > 0) {
-      setQuantity(Math.min(numValue, 100));
+      if (numValue > 100) {
+        setError('La cantidad máxima permitida es 100');
+        setQuantity(100);
+        setTempQuantity('100');
+      } else {
+        if (error === 'La cantidad máxima permitida es 100') {
+          setError('');
+        }
+        setQuantity(numValue);
+      }
     }
   };
 
@@ -160,8 +308,14 @@ export default function BarcodeForm({
    * Maneja los cambios en el campo de descripción
    */
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDescription(e.target.value);
-    if (error && enableDescription) {
+    const val = e.target.value;
+    if (val.length > 200) {
+      setError('La descripción no puede superar los 200 caracteres');
+    } else if (error === 'La descripción no puede superar los 200 caracteres') {
+      setError('');
+    }
+    setDescription(val.slice(0, 200));
+    if (error && enableDescription && val.length <= 200) {
       setError('');
     }
   };
@@ -177,9 +331,22 @@ export default function BarcodeForm({
    * Maneja los cambios en el campo de precio
    */
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPrice(e.target.value);
-    if (error && enablePrice) {
-      setError('');
+    const val = e.target.value;
+    const num = parseFloat(val);
+    if (!isNaN(num) && num < 0) {
+      setError('El precio no puede ser negativo');
+      setPrice('0');
+      return;
+    }
+    const numVal = parseFloat(val) || 0;
+    if (numVal > 999999) {
+      setError('El precio máximo permitido es $999,999');
+      setPrice('999999');
+    } else {
+      if (error === 'El precio máximo permitido es $999,999' || error === 'El precio no puede ser negativo') {
+        setError('');
+      }
+      setPrice(val);
     }
   };
 
@@ -189,6 +356,27 @@ export default function BarcodeForm({
       setTempQuantity('');
       setQuantity(1);
       quantityInputRef.current.focus();
+    }
+  };
+
+  const handleInlineUpdateField = async (index: number, updates: Partial<BarcodeItem>) => {
+    const item = barcodes[index];
+    if (!item) return;
+
+    // Estandarizar la descripción si se actualiza
+    const finalUpdates = { ...updates };
+    if (finalUpdates.description !== undefined) {
+      finalUpdates.description = sanitizeInput(String(finalUpdates.description || '')).toLowerCase();
+    }
+
+    if (user && loadedBatchId && item.id) {
+      try {
+        const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+        await updateDoc(itemDocRef, finalUpdates);
+        console.log('✅ Ítem actualizado en Firestore:', finalUpdates);
+      } catch (error) {
+        console.error('Error al actualizar ítem en Firestore:', error);
+      }
     }
   };
 
@@ -202,74 +390,124 @@ export default function BarcodeForm({
       ...prev,
       [index]: value
     }));
-  };
 
-  const handleTableQuantityBlur = (e: React.FocusEvent<HTMLInputElement>, index: number) => {
-    const value = e.target.value;
-    
-    if (value === '' || parseInt(value) <= 0) {
-      setBarcodes(prev => prev.map((barcode, i) => 
-        i === index ? { ...barcode, quantity: 1 } : barcode
-      ));
-    } else {
-      const numValue = parseInt(value);
+    const numValue = parseInt(value);
+    if (!isNaN(numValue) && numValue > 0) {
       setBarcodes(prev => prev.map((barcode, i) => 
         i === index ? { ...barcode, quantity: Math.min(numValue, 100) } : barcode
       ));
     }
+  };
+
+  const handleTableQuantityBlur = (e: React.FocusEvent<HTMLInputElement>, index: number) => {
+    const value = e.target.value;
+    let finalQty = 1;
+    
+    if (value !== '' && parseInt(value) > 0) {
+      const parsed = parseInt(value);
+      if (parsed > 100) {
+        alert("La cantidad máxima permitida es 100 etiquetas.");
+      }
+      finalQty = Math.min(parsed, 100);
+    }
+
+    setBarcodes(prev => prev.map((barcode, i) => 
+      i === index ? { ...barcode, quantity: finalQty } : barcode
+    ));
     
     setTempTableQuantities(prev => {
       const newState = { ...prev };
       delete newState[index];
       return newState;
     });
-    
-    if (wasPreviewOpen) {
-      setTimeout(() => {
-        setShowPDFPreview(true);
-        setWasPreviewOpen(false);
-      }, 200);
-    }
+
+    // Sincronizar con Firestore en caliente si hay lote activo
+    handleInlineUpdateField(index, { quantity: finalQty });
   };
 
   const handleTableQuantityFocus = (index: number) => {
+    const currentQty = barcodes[index]?.quantity;
     setTempTableQuantities(prev => ({
       ...prev,
-      [index]: ''
+      [index]: currentQty !== undefined ? String(currentQty) : ''
     }));
-    
-    if (showPDFPreview) {
-      setWasPreviewOpen(true);
-      setShowPDFPreview(false);
-    }
   };
 
   /**
    * Agrega el código al array
    */
   const addCode = (code: string, quantity: number, description: string = '', price: number = 0) => {
+    const formattedDesc = enableDescription ? sanitizeInput(String(description || '')).toLowerCase() : '';
     setBarcodes(prev => [...prev, { 
       code, 
       quantity, 
       isValid: true,
       isDuplicate: false,
-      description: enableDescription ? description : '',
+      description: formattedDesc,
       price: enablePrice ? price : 0,
       hasDescription: enableDescription,
-      hasPrice: enablePrice
+      hasPrice: enablePrice,
+      print: true
     }]);
     setInputCode('');
     setQuantity(1);
     setDescription('');
     setPrice('');
     setTempQuantity('1');
-    
-    const checkboxStates = getCheckboxStates();
-    if (!checkboxStates.shouldEnableDescription) {
-      setEnableDescription(false);
+  };
+
+  const generateNextGS1Correlative = async () => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
     }
-    if (!checkboxStates.shouldEnablePrice) {
-      setEnablePrice(false);
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        if (data.gs1Config) {
+          const config = data.gs1Config;
+          const prefixLen = config.countryPrefix.length;
+          const companyLen = config.companyPrefix.length;
+          const prodLen = 12 - prefixLen - companyLen;
+          if (prodLen > 0) {
+            const nextSeq = (config.lastProductSeq || 0) + 1;
+            const paddedProductCode = String(nextSeq).padStart(prodLen, '0');
+            const code12 = `${config.countryPrefix}${config.companyPrefix}${paddedProductCode}`;
+            
+            // Calcular dígito verificador
+            let sum = 0;
+            for (let i = 0; i < 12; i++) {
+              sum += parseInt(code12[i]) * (i % 2 === 0 ? 1 : 3);
+            }
+            const calculatedCheck = (10 - (sum % 10)) % 10;
+            const generatedEAN = `${code12}${calculatedCheck}`;
+            
+            setInputCode(generatedEAN);
+            setIsValid(true);
+            setError('');
+            
+            // Actualizar Firestore para bloquear esta secuencia inmediatamente
+            await updateDoc(userDocRef, {
+              'gs1Config.lastProductSeq': nextSeq
+            });
+            
+            // Enfoque automático según los campos habilitados
+            if (enableDescription && descriptionInputRef.current) {
+              descriptionInputRef.current.focus();
+            } else if (enablePrice && priceInputRef.current) {
+              priceInputRef.current.focus();
+            } else if (quantityInputRef.current) {
+              quantityInputRef.current.focus();
+            }
+          }
+        } else {
+          setShowGs1RedirectModal(true);
+        }
+      }
+    } catch (err) {
+      console.error('Error al generar correlativo rápido:', err);
     }
   };
 
@@ -281,10 +519,64 @@ export default function BarcodeForm({
     return existingItem ? existingItem.quantity : 0;
   };
 
+  const handleSaveBatch = async () => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const batchName = prompt("Ingresa un nombre para este lote:", `Lote del ${new Date().toLocaleDateString('es-PE')}`);
+    if (batchName === null) return; // Cancelado
+
+    const trimmedName = batchName.trim() || `Lote del ${new Date().toLocaleDateString('es-PE')}`;
+    setIsSavingBatch(true);
+
+    try {
+      const newDocRef = doc(collection(db, 'users', user.uid, 'batches'));
+      const batchMetadata = {
+        id: newDocRef.id,
+        name: trimmedName,
+        totalCount: barcodes.length,
+        enableDescription,
+        enablePrice,
+        customCurrency: customCurrency || null,
+        createdAt: serverTimestamp()
+      };
+      await setDoc(newDocRef, batchMetadata);
+
+      // Guardar los items correspondientes en la subcolección
+      await saveItemsSubcollection(user.uid, newDocRef.id, barcodes);
+
+      alert('¡Lote guardado con éxito en la nube! Puedes verlo en tu panel.');
+    } catch (error) {
+      console.error('Error al guardar el lote:', error);
+      alert('Hubo un error al guardar el lote. Por favor verifica tu conexión y base de datos.');
+    } finally {
+      setIsSavingBatch(false);
+    }
+  };
+
   /**
    * Valida el código EAN-13 ingresado y lo agrega al array
    */
   const handleValidateCode = () => {
+    // Verificar límites de plan SaaS
+    if (!user) {
+      const maxCodes = limits.guest.maxCodesPerBatch;
+      if (barcodes.length >= maxCodes) {
+        setError(`Límite de invitado alcanzado (máx. ${maxCodes} códigos). Regístrate gratis para agregar más.`);
+        setIsAuthModalOpen(true);
+        return;
+      }
+    } else {
+      const maxCodes = isPro ? limits.pro.maxCodesPerBatch : limits.free.maxCodesPerBatch;
+      if (barcodes.length >= maxCodes) {
+        setError(`Límite del plan alcanzado (máx. ${maxCodes} códigos por lote).`);
+        alert(`Has alcanzado el límite de ${maxCodes} códigos por lote permitido para tu plan actual. ${isPro ? '' : 'Actualiza a Pro para expandir el límite a 1,000 códigos.'}`);
+        return;
+      }
+    }
+
     if (inputCode.length !== 13) {
       setError('El código debe tener 13 dígitos');
       setIsValid(false);
@@ -300,11 +592,39 @@ export default function BarcodeForm({
       return;
     }
 
+    if (enableDescription && description.length > 200) {
+      setError('La descripción no puede superar los 200 caracteres');
+      setIsValid(false);
+      if (descriptionInputRef.current) {
+        descriptionInputRef.current.focus();
+      }
+      return;
+    }
+
     if (enablePrice && (price.trim() === '' || parseFloat(price) <= 0)) {
       setError('El precio debe ser mayor a 0 cuando está habilitado');
       setIsValid(false);
       if (priceInputRef.current) {
         priceInputRef.current.focus();
+      }
+      return;
+    }
+
+    if (enablePrice && parseFloat(price) > 999999) {
+      setError('El precio máximo permitido es $999,999');
+      setIsValid(false);
+      if (priceInputRef.current) {
+        priceInputRef.current.focus();
+      }
+      return;
+    }
+
+    const qtyVal = parseInt(tempQuantity);
+    if (isNaN(qtyVal) || qtyVal <= 0 || qtyVal > 100) {
+      setError('La cantidad de etiquetas por código debe estar entre 1 y 100');
+      setIsValid(false);
+      if (quantityInputRef.current) {
+        quantityInputRef.current.focus();
       }
       return;
     }
@@ -335,6 +655,9 @@ export default function BarcodeForm({
       if (inputRef.current) {
         inputRef.current.focus();
       }
+    } else {
+      setInvalidCodeAttempt(inputCode);
+      setShowInvalidModal(true);
     }
   };
 
@@ -361,14 +684,6 @@ export default function BarcodeForm({
       setPrice('');
       setTempQuantity('1');
       
-      const checkboxStates = getCheckboxStates();
-      if (!checkboxStates.shouldEnableDescription) {
-        setEnableDescription(false);
-      }
-      if (!checkboxStates.shouldEnablePrice) {
-        setEnablePrice(false);
-      }
-      
       if (inputRef.current) {
         inputRef.current.focus();
       }
@@ -387,14 +702,6 @@ export default function BarcodeForm({
     setDescription('');
     setPrice('');
     setTempQuantity('1');
-    
-    const checkboxStates = getCheckboxStates();
-    if (!checkboxStates.shouldEnableDescription) {
-      setEnableDescription(false);
-    }
-    if (!checkboxStates.shouldEnablePrice) {
-      setEnablePrice(false);
-    }
     
     if (inputRef.current) {
       inputRef.current.focus();
@@ -416,132 +723,259 @@ export default function BarcodeForm({
   };
 
   return (
-    <div className={styles.codeContainer}>
-      {/* Mensaje informativo sobre formato bloqueado */}
-      {barcodes.length > 0 && (
-        <div className={styles.formatInfoMessage}>
-          <div className={styles.formatInfoIcon}>🔒</div>
-          <div className={styles.formatInfoText}>
-            <strong>Formato bloqueado:</strong> Todos los códigos deben tener el mismo formato.
-            {barcodes[0].hasDescription && barcodes[0].hasPrice && " Incluyendo descripción y precio."}
-            {barcodes[0].hasDescription && !barcodes[0].hasPrice && " Incluyendo descripción solamente."}
-            {!barcodes[0].hasDescription && barcodes[0].hasPrice && " Incluyendo precio solamente."}
-            {!barcodes[0].hasDescription && !barcodes[0].hasPrice && " Sin descripción ni precio."}
+    <div className={`${styles.codeContainer} ${isDashboard ? styles.codeContainerFullWidth : ''}`}>
+      <div className={styles.formsRow}>
+        <div className={styles.singleFormCard}>
+          {isDashboard && (
+            <div className={styles.formCardHeader}>
+              <h3 className={styles.formCardTitle}>Generador de Códigos</h3>
+              <div className={styles.headerButtons} ref={optionsDropdownRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => !isReadOnly && setIsOptionsDropdownOpen(!isOptionsDropdownOpen)}
+                  className={`${styles.optionsDropdownBtn} ${isReadOnly ? styles.btnDisabled : ''}`}
+                  disabled={isReadOnly}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  Opciones
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: '6px' }}>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {isOptionsDropdownOpen && !isReadOnly && (
+                  <div className={styles.optionsDropdownMenu}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenCurrencyModal?.();
+                        setIsOptionsDropdownOpen(false);
+                      }}
+                      className={styles.dropdownMenuItem}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}>
+                        <line x1="12" y1="1" x2="12" y2="23" />
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                      </svg>
+                      Configurar Moneda
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsOptionsDropdownOpen(false);
+                        if (!isPro) {
+                          alert("La importación masiva desde Excel/CSV es una característica exclusiva del Plan Pro. ¡Próximamente podrás suscribirte al Plan Pro!");
+                          return;
+                        }
+                        setShowImportModal(true);
+                      }}
+                      className={styles.dropdownMenuItem}
+                    >
+                      {!isPro ? '🔒 ' : ''}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Cargar Excel / CSV
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {isReadOnly && (
+            <div className={styles.readOnlyBanner}>
+              <div className={styles.readOnlyBannerIcon}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+              <div className={styles.readOnlyBannerText}>
+                {isBatchExceeded ? (
+                  <>
+                    <strong>Lote en modo Solo Lectura:</strong> Tienes {userBatchesCount} lotes, lo cual supera el límite de {limits.free.maxBatches} lotes permitidos en tu plan actual. Para volver a editar este lote, puedes eliminar otros lotes o actualizar tu cuenta.
+                  </>
+                ) : (
+                  <>
+                    <strong>Lote en modo Solo Lectura:</strong> Este lote contiene {barcodes.length} códigos, lo cual supera el límite de {maxCodes} códigos para tu plan actual. Para editar o agregar códigos, puedes eliminar códigos excedentes o actualizar tu cuenta.
+                  </>
+                )}
+              </div>
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => router.push('/profile')}
+                  className={styles.readOnlyBannerBtn}
+                >
+                  Actualizar a Pro
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Fila principal de entrada */}
+          <div className={styles.formCoreRow}>
+            <div className={styles.eanField}>
+              <div className={styles.inputWithScanner}>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputCode}
+                  onChange={handleInputChange}
+                  placeholder="Ingrese el código EAN-13"
+                  className={styles.input}
+                  disabled={isReadOnly}
+                />
+                <button
+                  type="button"
+                  onClick={() => !isReadOnly && setIsReaderOpen(true)}
+                  className={`${styles.scannerTriggerBtn} ${isReadOnly ? styles.btnDisabled : ''}`}
+                  disabled={isReadOnly}
+                  title="Escanear Código por Cámara"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                </button>
+              </div>
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isPro) {
+                      alert("El generador de correlativos GS1 es una característica exclusiva del Plan Pro. ¡Próximamente podrás suscribirte al Plan Pro!");
+                      return;
+                    }
+                    if (!isReadOnly) {
+                      generateNextGS1Correlative();
+                    }
+                  }}
+                  className={`${styles.gs1QuickCorrelativeBtn} ${isReadOnly ? styles.btnDisabled : ''}`}
+                  disabled={isReadOnly}
+                  title="Autocompletar Siguiente Correlativo GS1"
+                >
+                  {!isPro ? '🔒 ' : ''}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', color: '#f59e0b' }}>
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                  <span>Correlativo</span>
+                </button>
+              )}
+            </div>
+
+            <div className={styles.quantityField}>
+              <input
+                ref={quantityInputRef}
+                type="text"
+                value={tempQuantity}
+                onChange={handleQuantityChange}
+                onBlur={handleQuantityBlur}
+                onFocus={handleQuantityFocus}
+                onKeyDown={handleQuantityKeyDown}
+                className={styles.quantityInput}
+                pattern="[1-9][0-9]*"
+                inputMode="numeric"
+                disabled={isReadOnly}
+              />
+            </div>
+
+            <div className={styles.actionField}>
+              <button 
+                ref={validateButtonRef}
+                onClick={handleValidateCode}
+                className={`${styles.validateButton} ${isReadOnly ? styles.btnDisabled : ''}`}
+                disabled={isReadOnly}
+              >
+                Validar Código
+              </button>
+            </div>
           </div>
-        </div>
-      )}
-      
-      {/* Grupo de entrada y botón de validación */}
-      <div className={styles.inputGroup}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputCode}
-          onChange={handleInputChange}
-          placeholder="Ingrese el código EAN-13"
-          className={styles.input}
-        />
-        
-        {/* Checkbox y input para descripción */}
-        <div className={styles.checkboxGroup}>
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={enableDescription}
-              onChange={(e) => {
-                setEnableDescription(e.target.checked);
-                if (!e.target.checked) {
-                  setDescription('');
-                }
-              }}
-              className={styles.checkbox}
-              disabled={getCheckboxStates().shouldDisableDescription}
-            />
-            Agregar descripción
-            {barcodes.length > 0 && (
-              <span className={styles.formatLockMessage}>
-                (formato bloqueado)
-              </span>
-            )}
-          </label>
-          <input
-            ref={descriptionInputRef}
-            type="text"
-            value={description}
-            onChange={handleDescriptionChange}
-            onKeyDown={handleDescriptionKeyDown}
-            placeholder={enableDescription ? "Descripción (requerida)" : "Descripción (opcional)"}
-            className={`${styles.input} ${enableDescription ? styles.requiredField : ''}`}
-            disabled={!enableDescription}
-            required={enableDescription}
-          />
+
+          {/* Fila secundaria de campos opcionales */}
+          <div className={styles.formOptionalRow}>
+            {/* Checkbox y input para descripción */}
+            <div className={styles.optionalField}>
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={enableDescription}
+                  onChange={(e) => {
+                    setEnableDescription(e.target.checked);
+                    if (!e.target.checked) {
+                      setDescription('');
+                    }
+                  }}
+                  className={styles.checkbox}
+                  disabled={isReadOnly}
+                />
+                Agregar descripción
+              </label>
+              {enableDescription && (
+                <input
+                  ref={descriptionInputRef}
+                  type="text"
+                  value={description}
+                  onChange={handleDescriptionChange}
+                  onKeyDown={handleDescriptionKeyDown}
+                  placeholder="Descripción (requerida)"
+                  className={`${styles.input} ${styles.requiredField}`}
+                  required
+                  disabled={isReadOnly}
+                />
+              )}
+            </div>
+
+            {/* Checkbox y input para precio */}
+            <div className={styles.optionalField}>
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={enablePrice}
+                  onChange={(e) => {
+                    setEnablePrice(e.target.checked);
+                    if (!e.target.checked) {
+                      setPrice('');
+                    }
+                  }}
+                  className={styles.checkbox}
+                  disabled={isReadOnly}
+                />
+                Agregar precio
+              </label>
+              {enablePrice && (
+                <input
+                  ref={priceInputRef}
+                  type="number"
+                  value={price}
+                  onChange={handlePriceChange}
+                  onKeyDown={handlePriceKeyDown}
+                  placeholder="Precio (requerido)"
+                  className={`${styles.input} ${styles.requiredField}`}
+                  step="0.01"
+                  min="0.01"
+                  required
+                  disabled={isReadOnly}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Mensaje de error si existe */}
+          {error && (
+            <p className={styles.error} style={{ margin: 0, color: '#ef4444' }}>{error}</p>
+          )}
         </div>
 
-        {/* Checkbox y input para precio */}
-        <div className={styles.checkboxGroup}>
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={enablePrice}
-              onChange={(e) => {
-                setEnablePrice(e.target.checked);
-                if (!e.target.checked) {
-                  setPrice('');
-                }
-              }}
-              className={styles.checkbox}
-              disabled={getCheckboxStates().shouldDisablePrice}
-            />
-            Agregar precio
-            {barcodes.length > 0 && (
-              <span className={styles.formatLockMessage}>
-                (formato bloqueado)
-              </span>
-            )}
-          </label>
-          <input
-            ref={priceInputRef}
-            type="number"
-            value={price}
-            onChange={handlePriceChange}
-            onKeyDown={handlePriceKeyDown}
-            placeholder={enablePrice ? "Precio (requerido)" : "Precio (opcional)"}
-            className={`${styles.input} ${enablePrice ? styles.requiredField : ''}`}
-            step="0.01"
-            min="0.01"
-            disabled={!enablePrice}
-            required={enablePrice}
-          />
-        </div>
-
-        <input
-          ref={quantityInputRef}
-          type="text"
-          value={tempQuantity}
-          onChange={handleQuantityChange}
-          onBlur={handleQuantityBlur}
-          onFocus={handleQuantityFocus}
-          onKeyDown={handleQuantityKeyDown}
-          className={styles.quantityInput}
-          pattern="[1-9][0-9]*"
-          inputMode="numeric"
-        />
-        <button 
-          ref={validateButtonRef}
-          onClick={handleValidateCode}
-          className={styles.validateButton}
-        >
-          Validar Código
-        </button>
       </div>
 
-      {/* Mensaje de error si existe */}
-      {error && (
-        <p className={styles.error}>{error}</p>
-      )}
-
       {/* Modal de confirmación */}
-      {showModal && pendingCode && (
+      {mounted && showModal && pendingCode && typeof window !== 'undefined' && createPortal(
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
             <h3>¡Código Duplicado!</h3>
@@ -571,133 +1005,740 @@ export default function BarcodeForm({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Lista de códigos guardados */}
-      {barcodes.length > 0 && (
-        <div className={styles.savedCodesContainer}>
-          <h2 className={styles.subtitle}>Códigos Guardados</h2>
-          
-          {/* Control de altura del código de barras */}
-          <div className={styles.heightControlContainer}>
-            <label className={styles.heightControlLabel}>
-              Altura del código de barras: {barcodeHeight}px
-            </label>
-            <div className={styles.heightControlGroup}>
-              <input
-                type="range"
-                min="40"
-                max="150"
-                step="5"
-                value={barcodeHeight}
-                onChange={(e) => setBarcodeHeight(parseInt(e.target.value))}
-                className={styles.heightSlider}
-              />
-              <input
-                type="number"
-                min="40"
-                max="150"
-                step="5"
-                value={barcodeHeight}
-                onChange={(e) => setBarcodeHeight(parseInt(e.target.value) || 80)}
-                className={styles.heightInput}
-              />
+      {mounted && showInvalidModal && typeof window !== 'undefined' && createPortal(
+        <div className={styles.modalOverlay} onClick={() => setShowInvalidModal(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', marginBottom: '1rem' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>Código EAN-13 No Válido</h3>
             </div>
+            <p style={{ margin: '0 0 1.5rem 0', color: '#475569', lineHeight: '1.5' }}>
+              El código <strong>&quot;{invalidCodeAttempt}&quot;</strong> no cumple con la especificación estándar EAN-13 (debe tener exactamente 13 dígitos numéricos y el dígito verificador debe ser correcto).
+            </p>
+            <div className={styles.modalButtons} style={{ justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => {
+                  setShowInvalidModal(false);
+                  if (inputRef.current) {
+                    inputRef.current.focus();
+                    inputRef.current.select();
+                  }
+                }} 
+                className={styles.modalConfirmButton}
+                style={{ background: '#ef4444' }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de redirección al Asistente GS1 */}
+      {mounted && showGs1RedirectModal && typeof window !== 'undefined' && createPortal(
+        <div className={styles.modalOverlay} onClick={() => setShowGs1RedirectModal(false)}>
+          <div className={styles.importModal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className={styles.importModalHeader}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary-color)' }}>
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                </svg>
+                <h3 className={styles.importModalTitle}>Configurar Asistente GS1</h3>
+              </div>
+              <button className={styles.importModalCloseBtn} onClick={() => setShowGs1RedirectModal(false)} aria-label="Cerrar modal">×</button>
+            </div>
+            <div className={styles.importModalBody} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px 20px' }}>
+              <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.5', color: 'var(--text-secondary)' }}>
+                No tienes una configuración GS1 guardada. Para generar correlativos automáticos, primero debes configurar tus prefijos oficiales.
+              </p>
+              <div className={styles.saveButtonsContainer} style={{ marginTop: '12px', justifyContent: 'flex-end', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowGs1RedirectModal(false)}
+                  className={styles.saveAsNewBtn}
+                  style={{ background: 'var(--hover-bg, rgba(0, 0, 0, 0.03))', color: 'var(--text-secondary)', boxShadow: 'none', border: '1px solid var(--border-color)' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGs1RedirectModal(false);
+                    router.push('/creator');
+                  }}
+                  className={styles.saveChangesBtn}
+                >
+                  Ir al Asistente
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de importación */}
+      <ExcelImportModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} onImport={onImportCSV} />
+
+      {/* Modal de Configuración de Impresión Rápida (Escáner) */}
+      {mounted && showQuickPrintConfigModal && pendingEditCodeIndex !== null && typeof window !== 'undefined' && createPortal(
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal} style={{ maxWidth: '420px', borderRadius: '16px', padding: '0', overflow: 'hidden' }}>
+            <div className={styles.importModalHeader} style={{ background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.05), rgba(129, 140, 248, 0.05))', padding: '1.25rem 1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--success-color, #10b981)' }}>
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                <h3 className={styles.importModalTitle} style={{ margin: 0, fontSize: '1.1rem' }}>Producto Seleccionado</h3>
+              </div>
+              <button className={styles.importModalCloseBtn} onClick={() => setShowQuickPrintConfigModal(false)}>×</button>
+            </div>
+            <div className={styles.importModalBody} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <p style={{ margin: '0 0 6px 0', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Código Detectado
+                </p>
+                <p style={{ margin: '0', fontSize: '16px', fontWeight: '700', color: 'var(--text-color, #0f172a)' }}>
+                  {barcodes[pendingEditCodeIndex]?.code}
+                </p>
+                {barcodes[pendingEditCodeIndex]?.description && (
+                  <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: 'var(--text-muted, #475569)', fontStyle: 'italic' }}>
+                    "{barcodes[pendingEditCodeIndex]?.description}"
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--hover-bg, #f8fafc)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                <p style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: '700', color: 'var(--text-color, #1e293b)' }}>
+                  Configuración de la Etiqueta
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-color)' }}>
+                  <input
+                    type="checkbox"
+                    checked={barcodes[pendingEditCodeIndex]?.hasDescription}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setBarcodes(prev => prev.map((barcode, i) => 
+                        i === pendingEditCodeIndex ? { ...barcode, hasDescription: checked } : barcode
+                      ));
+                      handleInlineUpdateField(pendingEditCodeIndex, { hasDescription: checked });
+                    }}
+                    className={styles.tableCheckbox}
+                    style={{ margin: '0' }}
+                  />
+                  Incluir Descripción en el PDF
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-color)' }}>
+                  <input
+                    type="checkbox"
+                    checked={barcodes[pendingEditCodeIndex]?.hasPrice}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setBarcodes(prev => prev.map((barcode, i) => 
+                        i === pendingEditCodeIndex ? { ...barcode, hasPrice: checked } : barcode
+                      ));
+                      handleInlineUpdateField(pendingEditCodeIndex, { hasPrice: checked });
+                    }}
+                    className={styles.tableCheckbox}
+                    style={{ margin: '0' }}
+                  />
+                  Incluir Precio en el PDF
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowQuickPrintConfigModal(false)}
+                className={styles.saveChangesBtn}
+                style={{ width: '100%', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}
+              >
+                Confirmar y Cerrar
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de Adición Rápida (Escáner) */}
+      {mounted && showQuickAddModal && scannedCodeToInsert && typeof window !== 'undefined' && createPortal(
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal} style={{ maxWidth: '440px', borderRadius: '16px', padding: '0', overflow: 'hidden' }}>
+            <div className={styles.importModalHeader} style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(239, 68, 68, 0.05))', padding: '1.25rem 1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#f59e0b' }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <h3 className={styles.importModalTitle} style={{ margin: 0, fontSize: '1.1rem' }}>Producto no Registrado</h3>
+              </div>
+              <button className={styles.importModalCloseBtn} onClick={() => setShowQuickAddModal(false)}>×</button>
+            </div>
+            <div className={styles.importModalBody} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <p style={{ margin: '0', fontSize: '14px', lineHeight: '1.5', color: 'var(--text-secondary, #475569)' }}>
+                El código <strong style={{ color: 'var(--text-color, #0f172a)' }}>{scannedCodeToInsert}</strong> no está en este lote. ¿Deseas agregarlo ahora e imprimirlo?
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-color, #334155)' }}>Cantidad de Etiquetas</label>
+                  <input
+                    type="number"
+                    value={quickAddQty}
+                    onChange={(e) => setQuickAddQty(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                    className={styles.quantityInput}
+                    style={{ width: '100%', maxWidth: '100%', textAlign: 'left', padding: '8px 12px' }}
+                    min="1"
+                    max="100"
+                  />
+                </div>
+
+                {enableDescription && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-color, #334155)' }}>Descripción</label>
+                    <input
+                      type="text"
+                      value={quickAddDesc}
+                      onChange={(e) => setQuickAddDesc(e.target.value.slice(0, 200))}
+                      placeholder="Descripción del producto"
+                      className={styles.input}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px' }}
+                    />
+                  </div>
+                )}
+
+                {enablePrice && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-color, #334155)' }}>Precio</label>
+                    <input
+                      type="number"
+                      value={quickAddPrice}
+                      onChange={(e) => setQuickAddPrice(e.target.value)}
+                      placeholder="0.00"
+                      className={styles.input}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px' }}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.saveButtonsContainer} style={{ marginTop: '12px', justifyContent: 'flex-end', gap: '12px', display: 'flex' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuickAddModal(false);
+                    // Reabrir cámara para seguir escaneando si cancela
+                    setIsReaderOpen(true);
+                  }}
+                  className={styles.saveAsNewBtn}
+                  style={{ background: 'var(--hover-bg, rgba(0, 0, 0, 0.03))', color: 'var(--text-secondary)', boxShadow: 'none', border: '1px solid var(--border-color)', padding: '8px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    // Validar precio
+                    const priceVal = enablePrice ? parseFloat(quickAddPrice) || 0 : 0;
+                    if (enablePrice && priceVal <= 0) {
+                      alert("El precio debe ser mayor a 0 cuando está habilitado.");
+                      return;
+                    }
+
+                    // Agregar código al lote
+                    addCode(
+                      scannedCodeToInsert,
+                      quickAddQty,
+                      enableDescription ? quickAddDesc.trim() : '',
+                      priceVal
+                    );
+
+                    // Sincronizar con Firestore en caliente si hay lote activo
+                    if (user && loadedBatchId) {
+                      try {
+                        const newDocRef = doc(collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items'));
+                        const itemData = {
+                          code: scannedCodeToInsert,
+                          quantity: quickAddQty,
+                          isValid: true,
+                          description: enableDescription ? quickAddDesc.toLowerCase().trim() : '',
+                          price: priceVal,
+                          hasDescription: enableDescription,
+                          hasPrice: enablePrice,
+                          orderIndex: barcodes.length,
+                          print: true
+                        };
+                        await setDoc(newDocRef, itemData);
+                        console.log('✅ Ítem escaneado e insertado en Firestore:', itemData);
+                      } catch (error) {
+                        console.error('Error al insertar ítem escaneado en Firestore:', error);
+                      }
+                    }
+
+                    setShowQuickAddModal(false);
+                    alert(`¡Código "${scannedCodeToInsert}" agregado con éxito para impresión!`);
+                  }}
+                  className={styles.saveChangesBtn}
+                  style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}
+                >
+                  Guardar y Agregar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Lector por cámara */}
+      {mounted && (
+        <BarcodeReaderModal
+          isOpen={isReaderOpen}
+          onClose={() => setIsReaderOpen(false)}
+          onScanSuccess={(code) => {
+            const existingIndex = barcodes.findIndex(item => item.code === code);
+            if (existingIndex !== -1) {
+              // El código YA existe en el lote:
+              // 1. Marcarlo para impresión en caliente
+              setBarcodes(prev => prev.map((barcode, i) => 
+                i === existingIndex ? { ...barcode, print: true } : barcode
+              ));
+              handleInlineUpdateField(existingIndex, { print: true });
+
+              // 2. Activar efecto visual de destello en la tabla
+              setFlashingIndex(existingIndex);
+              setTimeout(() => {
+                setFlashingIndex(null);
+              }, 2200);
+
+              // 3. Hacer scroll suave hacia la fila
+              setTimeout(() => {
+                const rowEl = document.getElementById(`barcode-row-${existingIndex}`);
+                if (rowEl) {
+                  rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 200);
+
+              // 4. Abrir modal de configuración de impresión rápida
+              setPendingEditCodeIndex(existingIndex);
+              setShowQuickPrintConfigModal(true);
+              setIsReaderOpen(false); // Cerramos el lector
+            } else {
+              // El código NO existe en el lote:
+              if (isReadOnly) {
+                alert(`Lote en modo Solo Lectura. No se puede agregar el código "${code}" porque supera los límites de tu plan actual.`);
+                setIsReaderOpen(false);
+                return;
+              }
+
+              // Ejecutar validación inmediata del código escaneado
+              const isValidCode = validateEAN13(code);
+              if (!isValidCode) {
+                setInvalidCodeAttempt(code);
+                setShowInvalidModal(true);
+                setIsReaderOpen(false);
+                return;
+              }
+
+              // Preparar adición rápida
+              setScannedCodeToInsert(code);
+              setQuickAddQty(1);
+              setQuickAddDesc('');
+              setQuickAddPrice('');
+              setShowQuickAddModal(true);
+              setIsReaderOpen(false);
+            }
+          }}
+        />
+      )}
+
+      {/* Tabla de códigos escaneados */}
+      {barcodes.length > 0 && (
+        <div className={styles.savedCodesContainer} style={{ marginTop: '2rem', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <h2 className={styles.subtitle} style={{ margin: 0 }}>Códigos Escaneados</h2>
+              <div className={styles.searchBox}>
+                <svg className={styles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por descripción o código..."
+                  className={styles.searchInputField}
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className={styles.clearSearchBtn} title="Limpiar búsqueda">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+            {isDashboard && (
+              <div className={styles.saveButtonsContainer}>
+                {loadedBatchId && (
+                  <button
+                    onClick={() => onSaveBatch ? onSaveBatch(loadedBatchName || '', true) : null}
+                    disabled={isSaving}
+                    className={styles.saveChangesBtn}
+                  >
+                    {isSaving ? (
+                      'Guardando...'
+                    ) : (
+                      <>
+                        <svg className={styles.inlineIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                          <polyline points="17 21 17 13 7 13 7 21" />
+                          <polyline points="7 3 7 8 15 8" />
+                        </svg>
+                        Guardar Cambios
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (onSaveBatch) {
+                      onSaveBatch(undefined, false);
+                    } else {
+                      handleSaveBatch();
+                    }
+                  }}
+                  disabled={isSaving}
+                  className={styles.saveAsNewBtn}
+                >
+                  {isSaving ? (
+                    'Guardando...'
+                  ) : (
+                    <>
+                      <svg className={styles.inlineIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a6 6 0 0 0 0-12z" />
+                      </svg>
+                      Guardar Lote
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
           
           <div className={styles.tableContainer}>
             <table className={styles.barcodesTable}>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Código EAN</th>
-                <th>Descripción</th>
-                <th>Precio</th>
-                <th>Imagen</th>
-                <th>Cantidad</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {barcodes.map((item, index) => (
-                <tr key={index} className={item.isDuplicate ? styles.duplicateRow : ''}>
-                  <td>{index + 1}</td>
-                  <td>{item.code}</td>
-                  <td>
-                    {item.hasDescription ? (
-                      <input
-                        type="text"
-                        value={item.description || ''}
-                        onChange={(e) => {
-                          setBarcodes(prev => prev.map((barcode, i) => 
-                            i === index ? { ...barcode, description: e.target.value } : barcode
-                          ));
-                        }}
-                        className={styles.descriptionInput}
-                        placeholder="Descripción"
-                      />
-                    ) : (
-                      <span className={styles.disabledField}>-</span>
-                    )}
-                  </td>
-                  <td>
-                    {item.hasPrice ? (
-                      <input
-                        type="number"
-                        value={item.price || ''}
-                        onChange={(e) => {
-                          setBarcodes(prev => prev.map((barcode, i) => 
-                            i === index ? { ...barcode, price: parseFloat(e.target.value) || 0 } : barcode
-                          ));
-                        }}
-                        className={styles.priceInput}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                      />
-                    ) : (
-                      <span className={styles.disabledField}>-</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className={styles.barcodeWrapper}>
-                      <Barcode 
-                        value={item.code}
-                        width={1.5}
-                        height={barcodeHeight}
-                        fontSize={14}
-                        margin={0}
-                        displayValue={true}
-                        background="#ffffff"
-                      />
-                    </div>
-                  </td>
-                  <td>
+              <thead>
+                <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>
                     <input
-                      type="text"
-                      value={tempTableQuantities[index] !== undefined ? tempTableQuantities[index] : item.quantity}
-                      onChange={(e) => handleTableQuantityChange(e, index)}
-                      onBlur={(e) => handleTableQuantityBlur(e, index)}
-                      onFocus={() => handleTableQuantityFocus(index)}
-                      className={styles.quantityInput}
-                      pattern="[1-9][0-9]*"
-                      inputMode="numeric"
-                      min="1"
+                      type="checkbox"
+                      checked={barcodes.length > 0 && barcodes.every(item => item.print !== false)}
+                      ref={(el) => {
+                        if (el) {
+                          const allChecked = barcodes.length > 0 && barcodes.every(item => item.print !== false);
+                          const noneChecked = barcodes.every(item => item.print === false);
+                          el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
+                        }
+                      }}
+                      onChange={async (e) => {
+                        if (isReadOnly) return;
+                        const checked = e.target.checked;
+                        setBarcodes(prev => prev.map(item => ({ ...item, print: checked })));
+                        
+                        // Sincronizar todos a Firestore en caliente si aplica
+                        if (user && loadedBatchId) {
+                          const promises = barcodes.map(async (item) => {
+                            if (item.id) {
+                              const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+                              await updateDoc(itemDocRef, { print: checked });
+                            }
+                          });
+                          await Promise.all(promises);
+                        }
+                      }}
+                      disabled={isReadOnly}
+                      className={styles.tableCheckbox}
+                      title="Seleccionar / Deseleccionar todos para imprimir"
+                      style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
                     />
-                  </td>
-                  <td>
-                    <button 
-                      onClick={() => handleRemoveCode(index)}
-                      className={styles.removeButton}
-                    >
-                      ×
-                    </button>
-                  </td>
+                  </th>
+                  <th>#</th>
+                  <th>Código EAN</th>
+                  <th>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={barcodes.length > 0 && barcodes.every(item => item.hasDescription)}
+                        ref={(el) => {
+                          if (el) {
+                            const allChecked = barcodes.length > 0 && barcodes.every(item => item.hasDescription);
+                            const noneChecked = barcodes.every(item => !item.hasDescription);
+                            el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
+                          }
+                        }}
+                        onChange={async (e) => {
+                          if (isReadOnly) return;
+                          const checked = e.target.checked;
+                          setBarcodes(prev => prev.map(item => ({ ...item, hasDescription: checked })));
+                          
+                          if (user && loadedBatchId) {
+                            const promises = barcodes.map(async (item) => {
+                              if (item.id) {
+                                const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+                                await updateDoc(itemDocRef, { hasDescription: checked });
+                              }
+                            });
+                            await Promise.all(promises);
+                          }
+                        }}
+                        disabled={isReadOnly}
+                        className={styles.tableCheckbox}
+                        title="Seleccionar / Deseleccionar descripción para todos"
+                        style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                      />
+                      Descripción
+                    </div>
+                  </th>
+                  <th>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={barcodes.length > 0 && barcodes.every(item => item.hasPrice)}
+                        ref={(el) => {
+                          if (el) {
+                            const allChecked = barcodes.length > 0 && barcodes.every(item => item.hasPrice);
+                            const noneChecked = barcodes.every(item => !item.hasPrice);
+                            el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
+                          }
+                        }}
+                        onChange={async (e) => {
+                          if (isReadOnly) return;
+                          const checked = e.target.checked;
+                          setBarcodes(prev => prev.map(item => ({ ...item, hasPrice: checked })));
+                          
+                          if (user && loadedBatchId) {
+                            const promises = barcodes.map(async (item) => {
+                              if (item.id) {
+                                const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+                                await updateDoc(itemDocRef, { hasPrice: checked });
+                              }
+                            });
+                            await Promise.all(promises);
+                          }
+                        }}
+                        disabled={isReadOnly}
+                        className={styles.tableCheckbox}
+                        title="Seleccionar / Deseleccionar precio para todos"
+                        style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                      />
+                      Precio
+                    </div>
+                  </th>
+                  <th>Cantidad</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(() => {
+                  let renderedCount = 0;
+                  const rows = barcodes.map((item, index) => {
+                    const matchesSearch = !searchQuery || 
+                      fuzzyMatch(item.description || '', searchQuery) ||
+                      item.code.includes(searchQuery.trim());
+
+                    if (!matchesSearch) return null;
+                    renderedCount++;
+
+                    return (
+                      <tr 
+                        key={index} 
+                        id={`barcode-row-${index}`}
+                        className={`${item.isDuplicate ? styles.duplicateRow : ''} ${item.print === false ? styles.nonPrintingRow : ''} ${flashingIndex === index ? styles.flashingRow : ''}`}
+                      >
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={item.print !== false}
+                            onChange={(e) => {
+                              if (isReadOnly) return;
+                              const checked = e.target.checked;
+                              setBarcodes(prev => prev.map((barcode, i) => 
+                                i === index ? { ...barcode, print: checked } : barcode
+                              ));
+                              handleInlineUpdateField(index, { print: checked });
+                            }}
+                            className={styles.tableCheckbox}
+                            title="Incluir este código en el PDF"
+                            style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                            disabled={isReadOnly}
+                          />
+                        </td>
+                        <td>{index + 1}</td>
+                        <td>{highlightText(item.code, searchQuery)}</td>
+                        <td>
+                          <div className={styles.tableCellWithCheckbox}>
+                            <input
+                              type="checkbox"
+                              checked={item.hasDescription}
+                              onChange={(e) => {
+                                if (isReadOnly) return;
+                                const checked = e.target.checked;
+                                setBarcodes(prev => prev.map((barcode, i) => 
+                                  i === index ? { ...barcode, hasDescription: checked } : barcode
+                                ));
+                                handleInlineUpdateField(index, { hasDescription: checked });
+                              }}
+                              className={styles.tableCheckbox}
+                              title="Imprimir descripción en PDF"
+                              disabled={isReadOnly}
+                            />
+                            {editingDescIndex === index && !isReadOnly ? (
+                              <input
+                                ref={editingInputRef}
+                                type="text"
+                                value={item.description || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val.length > 200) {
+                                    alert("La descripción no puede superar los 200 caracteres.");
+                                  }
+                                  setBarcodes(prev => prev.map((barcode, i) => 
+                                    i === index ? { ...barcode, description: val.slice(0, 200) } : barcode
+                                  ));
+                                }}
+                                className={styles.descriptionInput}
+                                placeholder="Descripción"
+                                onBlur={(e) => {
+                                  const val = String(e.target.value || '').toLowerCase().trim();
+                                  setBarcodes(prev => prev.map((barcode, i) => 
+                                    i === index ? { ...barcode, description: val } : barcode
+                                  ));
+                                  handleInlineUpdateField(index, { description: val });
+                                  setEditingDescIndex(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div
+                                className={styles.descriptionText}
+                                onClick={() => !isReadOnly && setEditingDescIndex(index)}
+                                style={isReadOnly ? { cursor: 'not-allowed' } : {}}
+                              >
+                                {highlightText(item.description || '', searchQuery)}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className={styles.tableCellWithCheckbox}>
+                            <input
+                              type="checkbox"
+                              checked={item.hasPrice}
+                              onChange={(e) => {
+                                if (isReadOnly) return;
+                                const checked = e.target.checked;
+                                setBarcodes(prev => prev.map((barcode, i) => 
+                                  i === index ? { ...barcode, hasPrice: checked } : barcode
+                                ));
+                                handleInlineUpdateField(index, { hasPrice: checked });
+                              }}
+                              className={styles.tableCheckbox}
+                              title="Imprimir precio en PDF"
+                              disabled={isReadOnly}
+                            />
+                            <input
+                              type="number"
+                              value={item.price || ''}
+                              onChange={(e) => {
+                                if (isReadOnly) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                if (val < 0) {
+                                  alert("El precio no puede ser negativo.");
+                                }
+                                if (val > 999999) {
+                                  alert("El precio máximo permitido es $999,999.");
+                                }
+                                setBarcodes(prev => prev.map((barcode, i) => 
+                                  i === index ? { ...barcode, price: Math.max(0, Math.min(val, 999999)) } : barcode
+                                ));
+                              }}
+                              className={styles.priceInput}
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              disabled={isReadOnly}
+                              onBlur={(e) => {
+                                if (isReadOnly) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const finalPrice = Math.max(0, Math.min(val, 999999));
+                                handleInlineUpdateField(index, { price: finalPrice });
+                              }}
+                              onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                              />
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={tempTableQuantities[index] !== undefined ? tempTableQuantities[index] : item.quantity}
+                              onChange={(e) => !isReadOnly && handleTableQuantityChange(e, index)}
+                              onBlur={(e) => !isReadOnly && handleTableQuantityBlur(e, index)}
+                              onFocus={() => !isReadOnly && handleTableQuantityFocus(index)}
+                              className={styles.quantityInput}
+                              pattern="[1-9][0-9]*"
+                              inputMode="numeric"
+                              min="1"
+                              disabled={isReadOnly}
+                            />
+                          </td>
+                        <td>
+                          <button 
+                            onClick={() => handleRemoveCode(index)}
+                            className={styles.removeButton}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  });
+
+                  if (renderedCount === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                          No se encontraron códigos que coincidan con la búsqueda.
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return rows;
+                })()}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

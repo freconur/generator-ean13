@@ -1,15 +1,17 @@
 /* Navbar moderno y minimalista */
 .navbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
   z-index: 1000;
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--glass-border);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --hover-bg: rgba(79, 70, 229, 0.08);
+}
+
+:global(.dark-theme) .navbar {
+  --hover-bg: rgba(129, 140, 248, 0.08);
 }
 
 .navbar.scrolled {
@@ -88,32 +90,37 @@
 }
 
 .navLink {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  display: inline-block;
   color: var(--text-secondary);
   text-decoration: none;
   font-size: 0.875rem;
-  font-weight: 500;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s ease;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.5rem 0.25rem;
+  transition: color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+}
+
+.navLink::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: var(--primary-color);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .navLink:hover {
   color: var(--primary-color);
-  background: rgba(59, 130, 246, 0.08);
-  transform: translateY(-1px);
 }
 
-.linkIcon {
-  font-size: 1rem;
-  opacity: 0.8;
-}
-
-.navLink:hover .linkIcon {
-  opacity: 1;
+.navLink:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
 }
 
 /* Botones de acción */
@@ -138,8 +145,8 @@
 }
 
 .themeToggle:hover {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
   transform: translateY(-1px);
   color: var(--primary-color);
 }
@@ -153,33 +160,7 @@
   transform: rotate(-15deg);
 }
 
-.githubButton {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-  color: white;
-  text-decoration: none;
-  font-size: 0.875rem;
-  font-weight: 500;
-  border-radius: 0.5rem;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
 
-.githubButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
-}
-
-.githubIcon {
-  font-size: 1rem;
-}
-
-.githubText {
-  font-weight: 600;
-}
 
 /* Botón hamburguesa - Mobile */
 .hamburger {
@@ -263,7 +244,7 @@
 
 .mobileNavLink:hover {
   color: var(--primary-color);
-  background: rgba(59, 130, 246, 0.08);
+  background: var(--hover-bg);
 }
 
 .mobileActionButtons {
@@ -291,31 +272,12 @@
 }
 
 .mobileThemeToggle:hover {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
   color: var(--primary-color);
 }
 
-.mobileGithubButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-  color: white;
-  text-decoration: none;
-  font-size: 1rem;
-  font-weight: 600;
-  border-radius: 0.5rem;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
 
-.mobileGithubButton:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
-}
 
 /* Overlay */
 .mobileMenuOverlay {
@@ -393,4 +355,318 @@
 
 .navbar {
   animation: slideDown 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-} 
+}
+
+/* Menú desplegable de usuario (Dropdown) */
+.userProfileContainer {
+  position: relative;
+  display: inline-block;
+}
+
+.avatarButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  border-radius: 9999px;
+  padding: 4px 12px 4px 4px;
+  cursor: pointer;
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.avatarButton:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
+}
+
+.userAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.userAvatarFallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.avatarArrow {
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+.avatarArrowOpen {
+  transform: rotate(180deg);
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--background-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px var(--shadow-medium);
+  width: 220px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 1050;
+  animation: dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dropdownHeader {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dropdownUserName {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdownUserPlan {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary-color);
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.dropdownItem:hover {
+  background: var(--hover-bg);
+  color: var(--primary-color);
+}
+
+.logoutItem {
+  color: #ef4444;
+}
+
+.logoutItem:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+}
+
+/* Botón CTA Iniciar Sesión */
+.loginButton {
+  padding: 0.5rem 1.25rem;
+  background: transparent;
+  border: 1.5px solid var(--primary-color);
+  color: var(--primary-color);
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.loginButton:hover {
+  background: var(--primary-color);
+  color: white;
+  box-shadow: 0 4px 12px var(--primary-shadow);
+}
+
+/* Versión móvil del estado del usuario */
+.mobileUserInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-light);
+  border-top: 1px solid var(--border-light);
+  margin: 1rem 0;
+}
+
+.mobileUserHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.mobileUserAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.mobileUserDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobileUserName {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.mobileUserEmail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mobileUserPlan {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+.mobileDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.mobileDropdownItem:hover {
+  background: var(--hover-bg);
+  color: var(--primary-color);
+}
+
+.mobileLoginButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.mobileLoginButton:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Placeholders de carga de autenticación para evitar parpadeos y saltos de layout */
+.authPlaceholder {
+  width: 120px;
+  height: 38px;
+  background: transparent;
+}
+
+.mobileAuthPlaceholder {
+  height: 48px;
+  background: transparent;
+}
+
+/* Nuevos estilos de botón de registro (CTA) */
+.signupButton {
+  padding: 0.5rem 1.25rem;
+  background: var(--primary-color);
+  border: 1.5px solid var(--primary-color);
+  color: #ffffff !important;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.signupButton:hover {
+  background: var(--secondary-color);
+  border-color: var(--secondary-color);
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px var(--primary-shadow);
+  transform: translateY(-1px);
+}
+
+:global(.dark-theme) .signupButton {
+  color: #ffffff !important;
+}
+
+.mobileSignupButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: var(--primary-color);
+  border: 1px solid var(--primary-color);
+  color: #ffffff !important;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.mobileSignupButton:hover {
+  background: var(--secondary-color);
+  border-color: var(--secondary-color);
+  color: #ffffff !important;
+}
+
+:global(.dark-theme) .mobileSignupButton {
+  color: #ffffff !important;
+}
+ 

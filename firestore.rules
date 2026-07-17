@@ -1,0 +1,180 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required) - unique identifier matching document ID
+    //   - email: string or null (optional) - user email address
+    //   - displayName: string or null (optional) - user's name
+    //   - photoURL: string or null (optional) - user's avatar URL
+    //   - role: string (required) - 'user' or 'admin'
+    //   - subscription: map (required)
+    //     - status: string - 'active', 'inactive', 'past_due', or 'canceled'
+    //     - tier: string - 'free', 'pro', or 'enterprise'
+    //     - priceId: string or null
+    //     - expiresAt: number or null
+    //   - createdAt: timestamp (required) - profile creation time
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the user is the owner of the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate string length
+    function validStringLength(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // Validate optional string
+    function isValidOptionalString(val, minLen, maxLen) {
+      return val == null || (val is string && val.size() >= minLen && val.size() <= maxLen);
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email == null || (email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
+    }
+
+    // Validate URL format
+    function isValidUrl(url) {
+      return url == null || (url is string && (url.matches("^https://.*") || url.matches("^http://.*")));
+    }
+
+    // Validate user profile structure and types
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'subscription', 'createdAt', 'gs1Config']) &&
+             data.uid == request.auth.uid &&
+             (!('email' in data.keys()) || isValidEmail(data.email)) &&
+             (!('role' in data.keys()) || data.role in ['user', 'admin']) &&
+             (!('subscription' in data.keys()) || (
+               data.subscription is map &&
+               data.subscription.keys().hasAll(['status', 'tier']) &&
+               data.subscription.status in ['active', 'inactive', 'past_due', 'canceled'] &&
+               data.subscription.tier in ['free', 'pro', 'enterprise']
+             )) &&
+             (!('gs1Config' in data.keys()) || (
+               data.gs1Config is map &&
+               data.gs1Config.keys().hasAll(['countryPrefix', 'companyPrefix', 'lastProductSeq']) &&
+               data.gs1Config.keys().hasOnly(['countryPrefix', 'companyPrefix', 'lastProductSeq']) &&
+               data.gs1Config.countryPrefix is string && data.gs1Config.countryPrefix.size() <= 3 &&
+               data.gs1Config.companyPrefix is string && data.gs1Config.companyPrefix.size() <= 8 &&
+               data.gs1Config.lastProductSeq is number && data.gs1Config.lastProductSeq >= 0
+             ));
+    }
+
+    // Validate item structure and types inside a batch
+    function isValidItem(data) {
+      return data.keys().hasAll(['code', 'quantity', 'isValid']) &&
+             data.keys().hasOnly(['code', 'quantity', 'isValid', 'description', 'price', 'hasDescription', 'hasPrice', 'orderIndex', 'print']) &&
+             data.code is string && data.code.matches("^\\d{13}$") &&
+             data.quantity is number && data.quantity > 0 && data.quantity <= 100 &&
+             data.isValid is bool &&
+             (!('description' in data.keys()) || (data.description is string && data.description.size() <= 200)) &&
+             (!('price' in data.keys()) || (data.price is number && data.price >= 0 && data.price <= 999999)) &&
+             (!('hasDescription' in data.keys()) || data.hasDescription is bool) &&
+             (!('hasPrice' in data.keys()) || data.hasPrice is bool) &&
+             (!('orderIndex' in data.keys()) || data.orderIndex is number) &&
+             (!('print' in data.keys()) || data.print is bool);
+    }
+
+    // Validate barcode batch structure, types and plan limits (supports legacy barcodes array and new totalCount metadata)
+    function isValidBatch(data, userId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(userId)).data;
+      let subscription = ('subscription' in userDoc.keys() && userDoc.subscription is map) ? userDoc.subscription : {};
+      let isExpired = ('expiresAt' in subscription.keys()) && 
+                      subscription.expiresAt != null && 
+                      request.time.toMillis() > subscription.expiresAt;
+      let tier = ('tier' in subscription.keys() && !isExpired) ? subscription.tier : 'free';
+      let maxCodes = tier == 'pro' ? 1000 : 30;
+
+      return data.keys().hasAll(['id', 'name', 'enableDescription', 'enablePrice', 'customCurrency', 'createdAt']) &&
+             data.keys().hasOnly(['id', 'name', 'barcodes', 'totalCount', 'enableDescription', 'enablePrice', 'customCurrency', 'createdAt', 'updatedAt']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('barcodes' in data.keys()) || (data.barcodes is list && data.barcodes.size() <= 100)) &&
+             (!('totalCount' in data.keys()) || (data.totalCount is number && data.totalCount >= 0 && data.totalCount <= maxCodes)) &&
+             data.enableDescription is bool &&
+             data.enablePrice is bool &&
+             (data.customCurrency == null || (data.customCurrency is string && data.customCurrency.size() <= 10)) &&
+             data.createdAt is timestamp &&
+             (!('updatedAt' in data.keys()) || data.updatedAt is timestamp);
+    }
+
+    // Default deny rule
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // System limits config rules
+    match /system/limits {
+      allow read: if true;
+      allow write: if isAuthenticated() && 
+                    exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      // Users can only read their own document. Admin can read/get any document.
+      allow get: if isOwner(userId) || 
+                 (isAuthenticated() && 
+                  exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                  get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+
+      // Admin can list/query users collection to search by email
+      allow list: if isAuthenticated() && 
+                  exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                  get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      
+      // Users can create their own document if authenticated and the role is 'user' and subscription is 'free'
+      allow create: if isOwner(userId) && 
+                      isValidUser(request.resource.data) && 
+                      request.resource.data.role == 'user' && 
+                      request.resource.data.subscription.tier == 'free' && 
+                      request.resource.data.subscription.status == 'inactive';
+      
+      // Users can update their own document, but cannot self-escalate role or modify subscription properties.
+      // Admin can update any user document (e.g., subscription upgrades/downgrades), but cannot modify their role.
+      allow update: if (isOwner(userId) && 
+                        isValidUser(request.resource.data) &&
+                        request.resource.data.role == resource.data.role &&
+                        request.resource.data.subscription == resource.data.subscription) ||
+                       (isAuthenticated() && 
+                        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+                        request.resource.data.role == resource.data.role);
+                      
+      // Deletes are only allowed by admin (mocked check, or deny for now to keep user data secure)
+      allow delete: if false;
+
+      // Batches subcollection rules
+      match /batches/{batchId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidBatch(request.resource.data, userId);
+
+        match /items/{itemId} {
+          allow read, delete: if isOwner(userId);
+          allow create, update: if isOwner(userId) && isValidItem(request.resource.data);
+        }
+      }
+    }
+  }
+}

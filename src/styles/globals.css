@@ -1,5 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
 /* Variables CSS para el tema claro */
 :root {
+  --font-title: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --background-color: #f8fafc;
   --background-secondary: #f1f5f9;
   --text-color: #1e293b;
@@ -7,8 +11,8 @@
   --text-muted: #64748b;
   --border-color: #e2e8f0;
   --border-light: rgba(226, 232, 240, 0.3);
-  --primary-color: #3b82f6;
-  --primary-hover: #18bba0;
+  --primary-color: #4f46e5;
+  --primary-hover: #4338ca;
   --secondary-color: #8b5cf6;
   --accent-color: #06d6a0;
   --success-color: #10b981;
@@ -27,6 +31,10 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+  --radius-pill: 9999px;
+  --success-hover: #059669;
+  --primary-shadow: rgba(79, 70, 229, 0.2);
+  --success-shadow: rgba(16, 185, 129, 0.2);
 }
 
 /* Variables CSS para el tema oscuro */
@@ -39,7 +47,7 @@
   --text-muted: #94a3b8;
   --border-color: #334155;
   --border-light: rgba(51, 65, 85, 0.3);
-  --primary-color: #60a5fa;
+  --primary-color: #818cf8;
   --secondary-color: #a78bfa;
   --accent-color: #34d399;
   --success-color: #34d399;
@@ -58,6 +66,9 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+  --success-hover: #10b981;
+  --primary-shadow: rgba(129, 140, 248, 0.2);
+  --success-shadow: rgba(52, 211, 153, 0.2);
 }
 
 /* Aplicar colores base */
@@ -158,8 +169,11 @@ html,
 body {
   padding: 0;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
-    Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-title);
 }
 
 a {

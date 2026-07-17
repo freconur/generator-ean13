@@ -27,7 +27,7 @@
 /* Sección principal */
 .mainSection {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 1fr 3fr;
   gap: 3rem;
   margin-bottom: 2rem;
 }
@@ -61,7 +61,7 @@
 /* Sección de enlaces */
 .linksSection {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 2rem;
 }
 
@@ -192,7 +192,7 @@
   }
   
   .linksSection {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 1.5rem;
   }
   
@@ -256,4 +256,35 @@
 
 .footer {
   animation: fadeInUp 0.6s ease-out;
+}
+
+/* Botón de WhatsApp flotante moderno y limpio */
+.whatsappButton {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: var(--success-color);
+  color: #ffffff;
+  border-radius: var(--radius-pill);
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+  z-index: 999;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+}
+
+.whatsappButton:hover {
+  background-color: var(--success-hover);
+  transform: scale(1.1) translateY(-2px);
+  box-shadow: var(--shadow-xl);
+}
+
+.whatsappIcon {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
 } 

@@ -1,0 +1,307 @@
+/* Import.module.css */
+
+.importerContainer {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.description {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.dropzone {
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--background-color);
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.dropzone:hover, .dropzoneActive {
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.dropzoneIcon {
+  font-size: 2rem;
+}
+
+.dropzoneText {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-color);
+  margin: 0;
+}
+
+.dropzoneHelp {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.fileInput {
+  display: none;
+}
+
+.resultPanel {
+  margin-top: 20px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 20px;
+}
+
+.summaryList {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.summaryBadge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badgeSuccess {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success-color);
+}
+
+.badgeWarning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning-color);
+}
+
+.badgeError {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error-color);
+}
+
+.actionRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.btnCancel {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btnCancel:hover {
+  background: var(--background-secondary);
+}
+
+.btnImport {
+  padding: 8px 20px;
+  background: var(--primary-color);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgb(59 130 246 / 0.2);
+}
+
+.btnImport:hover {
+  background: var(--primary-hover, #18bba0);
+}
+
+.errorLog {
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--error-color);
+  margin-top: 12px;
+}
+
+.errorLogItem {
+  margin-bottom: 4px;
+}
+
+/* Paywall lock overlay */
+.lockOverlay {
+  position: relative;
+}
+
+.lockContent {
+  filter: blur(1.5px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.paywallBox {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  z-index: 10;
+  padding: 24px;
+  text-align: center;
+}
+
+.dark-theme .paywallBox {
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.paywallIcon {
+  font-size: 2.2rem;
+  margin-bottom: 12px;
+}
+
+.paywallTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-color);
+  margin: 0 0 6px 0;
+}
+
+.paywallText {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 16px 0;
+  max-width: 280px;
+}
+
+.paywallButton {
+  padding: 8px 16px;
+  background: var(--warning-color);
+  color: #0f172a;
+  border: none;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgb(245 158 11 / 0.2);
+}
+
+.paywallButton:hover {
+  background: #d97706;
+}
+
+.helpTableContainer {
+  margin-bottom: 20px;
+  background: var(--background-secondary, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+:global(.dark-theme) .helpTableContainer {
+  background: #1e293b;
+}
+
+.helpTableTitle {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-color);
+  margin: 0 0 10px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.helpTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  text-align: left;
+  min-width: 500px;
+}
+
+.helpTable th {
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+:global(.dark-theme) .helpTable th {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.helpTable td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-color);
+}
+
+.badgeMandatory {
+  font-weight: 700;
+  margin-right: 6px;
+  color: var(--primary-color);
+}
+
+.badgeName {
+  font-weight: 700;
+  margin-right: 6px;
+  color: var(--text-color);
+}
+
+.badgeReq, .badgeOpt {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  text-transform: uppercase;
+  display: inline-block;
+}
+
+.badgeReq {
+  background: rgba(79, 70, 229, 0.15);
+  color: var(--primary-color);
+}
+
+.badgeOpt {
+  background: rgba(148, 163, 184, 0.15);
+  color: #64748b;
+}
+
+.exampleVal {
+  font-family: monospace;
+  color: var(--text-secondary);
+}
