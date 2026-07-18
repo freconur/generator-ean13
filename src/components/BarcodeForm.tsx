@@ -9,7 +9,7 @@ import { formatPrice } from '../utils/formatPrice';
 import { useAuth } from '../context/AuthContext';
 import { useLimits } from '../hooks/useLimits';
 import { db } from '../utils/firebase';
-import { collection, doc, setDoc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { saveItemsSubcollection } from './BarcodeGeneratorWorkspace';
 
 import { BarcodeSettings } from './PDF-ean13';
@@ -436,9 +436,43 @@ export default function BarcodeForm({
   /**
    * Agrega el código al array
    */
-  const addCode = (code: string, quantity: number, description: string = '', price: number = 0) => {
+  const addCode = async (code: string, quantity: number, description: string = '', price: number = 0) => {
     const formattedDesc = enableDescription ? sanitizeInput(String(description || '')).toLowerCase() : '';
+    
+    let newItemId: string | undefined;
+    if (user && loadedBatchId) {
+      try {
+        const itemColRef = collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items');
+        const newItemDoc = doc(itemColRef);
+        newItemId = newItemDoc.id;
+        const itemData = {
+          code,
+          quantity,
+          isValid: true,
+          description: formattedDesc,
+          price: enablePrice ? price : 0,
+          hasDescription: enableDescription,
+          hasPrice: enablePrice,
+          orderIndex: barcodes.length,
+          print: true
+        };
+        await setDoc(newItemDoc, itemData);
+        
+        // Actualizar totalCount y updatedAt del lote en Firestore
+        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        await updateDoc(batchDocRef, {
+          totalCount: barcodes.length + 1,
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log('✅ Nuevo ítem guardado en Firestore:', newItemId);
+      } catch (err) {
+        console.error('Error al guardar nuevo ítem en Firestore:', err);
+      }
+    }
+
     setBarcodes(prev => [...prev, { 
+      id: newItemId,
       code, 
       quantity, 
       isValid: true,
@@ -665,8 +699,22 @@ export default function BarcodeForm({
   /**
    * Maneja la confirmación del modal
    */
-  const handleModalConfirm = () => {
+  const handleModalConfirm = async () => {
     if (pendingCode) {
+      const existingItem = barcodes.find(item => item.code === pendingCode.code);
+      if (existingItem) {
+        const newQuantity = existingItem.quantity + pendingCode.quantity;
+        if (user && loadedBatchId && existingItem.id) {
+          try {
+            const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', existingItem.id);
+            await updateDoc(itemDocRef, { quantity: newQuantity });
+            console.log('✅ Cantidad duplicada actualizada en Firestore:', existingItem.id);
+          } catch (err) {
+            console.error('Error al actualizar cantidad duplicada en Firestore:', err);
+          }
+        }
+      }
+
       setBarcodes(prev => prev.map(item => {
         if (item.code === pendingCode.code) {
           return {
@@ -709,10 +757,26 @@ export default function BarcodeForm({
     }
   };
 
-  /**
-   * Elimina un código del array
-   */
-  const handleRemoveCode = (index: number) => {
+  const handleRemoveCode = async (index: number) => {
+    const item = barcodes[index];
+    if (user && loadedBatchId && item && item.id) {
+      try {
+        const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+        await deleteDoc(itemDocRef);
+        
+        // Actualizar totalCount y updatedAt del lote en Firestore
+        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        await updateDoc(batchDocRef, {
+          totalCount: Math.max(0, barcodes.length - 1),
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log('✅ Ítem eliminado de Firestore:', item.id);
+      } catch (error) {
+        console.error('Error al eliminar ítem de Firestore:', error);
+      }
+    }
+
     setBarcodes(prev => {
       const newBarcodes = prev.filter((_, i) => i !== index);
       const codes = newBarcodes.map(item => item.code);
@@ -906,10 +970,20 @@ export default function BarcodeForm({
                 <input
                   type="checkbox"
                   checked={enableDescription}
-                  onChange={(e) => {
-                    setEnableDescription(e.target.checked);
-                    if (!e.target.checked) {
+                  onChange={async (e) => {
+                    const checked = e.target.checked;
+                    setEnableDescription(checked);
+                    if (!checked) {
                       setDescription('');
+                    }
+                    if (user && loadedBatchId) {
+                      try {
+                        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+                        await updateDoc(batchDocRef, { enableDescription: checked });
+                        console.log('✅ Habilitar descripción actualizado en Firestore:', checked);
+                      } catch (err) {
+                        console.error('Error al actualizar habilitar descripción en Firestore:', err);
+                      }
                     }
                   }}
                   className={styles.checkbox}
@@ -938,10 +1012,20 @@ export default function BarcodeForm({
                 <input
                   type="checkbox"
                   checked={enablePrice}
-                  onChange={(e) => {
-                    setEnablePrice(e.target.checked);
-                    if (!e.target.checked) {
+                  onChange={async (e) => {
+                    const checked = e.target.checked;
+                    setEnablePrice(checked);
+                    if (!checked) {
                       setPrice('');
+                    }
+                    if (user && loadedBatchId) {
+                      try {
+                        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+                        await updateDoc(batchDocRef, { enablePrice: checked });
+                        console.log('✅ Habilitar precio actualizado en Firestore:', checked);
+                      } catch (err) {
+                        console.error('Error al actualizar habilitar precio en Firestore:', err);
+                      }
                     }
                   }}
                   className={styles.checkbox}
@@ -1271,33 +1355,15 @@ export default function BarcodeForm({
 
                     setIsQuickAdding(true);
                     try {
-                      // Agregar código al lote
-                      addCode(
+                      // Agregar código al lote (se sincroniza automáticamente a Firestore)
+                      await addCode(
                         scannedCodeToInsert,
                         quickAddQty,
                         enableDescription ? quickAddDesc.trim() : '',
                         priceVal
                       );
-
-                      // Sincronizar con Firestore en caliente si hay lote activo
-                      if (user && loadedBatchId) {
-                        const newDocRef = doc(collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items'));
-                        const itemData = {
-                          code: scannedCodeToInsert,
-                          quantity: quickAddQty,
-                          isValid: true,
-                          description: enableDescription ? quickAddDesc.toLowerCase().trim() : '',
-                          price: priceVal,
-                          hasDescription: enableDescription,
-                          hasPrice: enablePrice,
-                          orderIndex: barcodes.length,
-                          print: true
-                        };
-                        await setDoc(newDocRef, itemData);
-                        console.log('✅ Ítem escaneado e insertado en Firestore:', itemData);
-                      }
                     } catch (error) {
-                      console.error('Error al insertar ítem escaneado en Firestore:', error);
+                      console.error('Error al insertar ítem escaneado:', error);
                     } finally {
                       setIsQuickAdding(false);
                       setShowQuickAddModal(false);
@@ -1429,6 +1495,7 @@ export default function BarcodeForm({
                     onClick={() => onSaveBatch ? onSaveBatch(loadedBatchName || '', true) : null}
                     disabled={isSaving}
                     className={styles.saveChangesBtn}
+                    title="Guardar Cambios"
                   >
                     {isSaving ? (
                       'Guardando...'
@@ -1439,7 +1506,7 @@ export default function BarcodeForm({
                           <polyline points="17 21 17 13 7 13 7 21" />
                           <polyline points="7 3 7 8 15 8" />
                         </svg>
-                        Guardar Cambios
+                        <span className={styles.saveBtnText}>Guardar Cambios</span>
                       </>
                     )}
                   </button>
@@ -1454,6 +1521,7 @@ export default function BarcodeForm({
                   }}
                   disabled={isSaving}
                   className={styles.saveAsNewBtn}
+                  title="Guardar Lote"
                 >
                   {isSaving ? (
                     'Guardando...'
@@ -1462,7 +1530,7 @@ export default function BarcodeForm({
                       <svg className={styles.inlineIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a6 6 0 0 0 0-12z" />
                       </svg>
-                      Guardar Lote
+                      <span className={styles.saveBtnText}>Guardar Lote</span>
                     </>
                   )}
                 </button>
@@ -1595,7 +1663,7 @@ export default function BarcodeForm({
                     </th>
                     <th className={styles.desktopColumn}>Cantidad</th>
                     <th className={styles.desktopColumn}>Acciones</th>
-                    <th className={styles.mobileArrowHeader} style={{ width: '40px' }}></th>
+                    <th className={styles.mobileArrowHeader} style={{ width: '32px' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1698,7 +1766,11 @@ export default function BarcodeForm({
                                     onClick={() => !isReadOnly && setEditingDescIndex(index)}
                                     style={isReadOnly ? { cursor: 'not-allowed' } : {}}
                                   >
-                                    {highlightText(item.description || '', searchQuery)}
+                                    {item.description ? (
+                                      highlightText(item.description, searchQuery)
+                                    ) : (
+                                      <span className={styles.descriptionPlaceholder}>Sin descripción</span>
+                                    )}
                                   </div>
                                 )}
                               </div>

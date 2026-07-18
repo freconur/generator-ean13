@@ -120,6 +120,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isLoadingBatch, setIsLoadingBatch] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(true);
+  const bypassWarningRef = useRef<boolean>(false);
 
   const maxCodesAllowed = !user 
     ? limits.guest.maxCodesPerBatch 
@@ -325,9 +326,52 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     }
   }, [barcodes.length, setShowPDFPreview]);
 
+  // Advertir al usuario antes de salir/recargar la página si hay códigos sin guardar
+  useEffect(() => {
+    const warningText = "Tienes cambios sin guardar. ¿Estás seguro de que deseas salir?";
+
+    const handleWindowClose = (e: BeforeUnloadEvent) => {
+      if (bypassWarningRef.current) return;
+      if ((!loadedBatchId && barcodes.length > 0) || isSavingBatch) {
+        e.preventDefault();
+        e.returnValue = warningText;
+        return warningText;
+      }
+    };
+
+    const handleBrowseAway = (url: string) => {
+      if (bypassWarningRef.current) {
+        // Reset reference so subsequent routing isn't bypassed
+        bypassWarningRef.current = false;
+        return;
+      }
+      if ((!loadedBatchId && barcodes.length > 0) || isSavingBatch) {
+        if (!window.confirm(warningText)) {
+          router.events.emit('routeChangeError');
+          throw 'routeChange aborted';
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleWindowClose);
+    router.events.on('routeChangeStart', handleBrowseAway);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleWindowClose);
+      router.events.off('routeChangeStart', handleBrowseAway);
+    };
+  }, [loadedBatchId, barcodes.length, isSavingBatch, router]);
+
   // Manejar selección de lote desde la barra lateral (tipo playlist)
   const handleSelectBatch = async (selectedBatch: any) => {
     if (!user) return;
+    
+    // Advertir si hay cambios sin guardar en un lote nuevo
+    if (!loadedBatchId && barcodes.length > 0) {
+      const confirmLeave = window.confirm("Tienes un lote nuevo con códigos sin guardar. Si cambias de lote, perderás estos códigos. ¿Deseas continuar?");
+      if (!confirmLeave) return;
+    }
+
     try {
       let loadedCodes: BarcodeItem[] = [];
       if (selectedBatch.barcodes && selectedBatch.barcodes.length > 0) {
@@ -360,6 +404,12 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
 
   // Crear una nueva lista de códigos y limpiar estados
   const handleCreateNewBatch = () => {
+    // Advertir si hay cambios sin guardar en un lote nuevo
+    if (!loadedBatchId && barcodes.length > 0) {
+      const confirmLeave = window.confirm("Tienes un lote nuevo con códigos sin guardar. Si creas uno nuevo, perderás estos códigos. ¿Deseas continuar?");
+      if (!confirmLeave) return;
+    }
+
     setBarcodes([]);
     setEnableDescription(false);
     setEnablePrice(false);
@@ -448,7 +498,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         await setDoc(newDocRef, newBatchData);
         setLoadedBatchId(targetBatchId);
         setLoadedBatchName(batchName || 'Lote');
-        // Redireccionar al nuevo lote en el dashboard
+        // Redireccionar al nuevo lote en el dashboard (evitando advertencia de salida)
+        bypassWarningRef.current = true;
         router.push(`/dashboard?batch=${targetBatchId}`, undefined, { shallow: true });
       }
 
@@ -468,6 +519,9 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
       alert('Hubo un error al guardar el lote. Por favor verifica tu conexión.');
     } finally {
       setIsSavingBatch(false);
+      setTimeout(() => {
+        bypassWarningRef.current = false;
+      }, 500);
     }
   };
 
@@ -494,16 +548,74 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   };
 
   // Manejar códigos importados por CSV/Excel
-  const handleImportBarcodes = (importedItems: BarcodeItem[]) => {
+  const handleImportBarcodes = async (importedItems: BarcodeItem[]) => {
     const hasAnyDescription = importedItems.some(item => item.description);
     const hasAnyPrice = importedItems.some(item => item.price);
     
     if (hasAnyDescription) setEnableDescription(true);
     if (hasAnyPrice) setEnablePrice(true);
 
+    let savedItems: BarcodeItem[] = [];
+
+    if (user && loadedBatchId) {
+      try {
+        const itemsColRef = collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items');
+        const newItemsWithIds: BarcodeItem[] = [];
+        let currentOrderIndex = barcodes.length;
+        
+        for (let i = 0; i < importedItems.length; i += 500) {
+          const chunk = importedItems.slice(i, i + 500);
+          const writeB = writeBatch(db);
+          
+          chunk.forEach((item, idx) => {
+            const newItemDocRef = doc(itemsColRef);
+            const orderIndex = currentOrderIndex + i + idx;
+            
+            const itemData = {
+              code: item.code,
+              quantity: item.quantity || 1,
+              isValid: item.isValid !== false,
+              description: String(item.description || '').toLowerCase().trim(),
+              price: item.price || 0,
+              hasDescription: hasAnyDescription || !!item.hasDescription,
+              hasPrice: hasAnyPrice || !!item.hasPrice,
+              orderIndex: orderIndex,
+              print: item.print !== false
+            };
+            
+            writeB.set(newItemDocRef, itemData);
+            
+            newItemsWithIds.push({
+              ...item,
+              id: newItemDocRef.id,
+              description: String(item.description || '').toLowerCase().trim(),
+              print: item.print !== false
+            });
+          });
+          
+          await writeB.commit();
+        }
+        
+        // Actualizar el totalCount en el documento del lote
+        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        await updateDoc(batchDocRef, {
+          totalCount: barcodes.length + importedItems.length,
+          updatedAt: serverTimestamp()
+        });
+        
+        savedItems = newItemsWithIds;
+        console.log('✅ Ítems importados guardados en Firestore.');
+      } catch (error) {
+        console.error('Error al guardar ítems importados en Firestore:', error);
+        alert('Hubo un error al guardar los ítems importados en la nube.');
+      }
+    } else {
+      savedItems = importedItems;
+    }
+
     setBarcodes(prev => {
       const existingCodes = new Set(prev.map(item => item.code));
-      const newItems = importedItems.map(item => ({
+      const newItems = savedItems.map(item => ({
         ...item,
         description: item.description ? String(item.description).toLowerCase().trim() : '',
         isDuplicate: existingCodes.has(item.code) || item.isDuplicate

@@ -275,6 +275,17 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+.descriptionPlaceholder {
+  color: #94a3b8;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+:global(.dark-theme) .descriptionPlaceholder {
+  color: #475569;
+}
+
 .priceInput {
   padding: 0.375rem 0.5rem;
   font-size: 0.875rem;
@@ -458,48 +469,58 @@
 
 .barcodesTable th:nth-child(1),
 .barcodesTable td:nth-child(1) {
+  /* Checkbox imprimir */
+  width: 40px;
+  text-align: center;
+}
+
+.barcodesTable th:nth-child(2),
+.barcodesTable td:nth-child(2) {
   /* # */
-  width: 50px;
+  width: 40px;
   text-align: center;
   font-weight: 600;
   color: #8b5cf6;
 }
 
-.barcodesTable th:nth-child(2),
-.barcodesTable td:nth-child(2) {
-  /* Código EAN */
-  width: 160px;
+.barcodesTable th:nth-child(3),
+.barcodesTable td:nth-child(3) {
+  /* Código EAN - ancho fijo para 13 dígitos */
+  width: 145px;
+  max-width: 145px;
+  min-width: 145px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
   color: #312e81;
+  white-space: nowrap;
 }
 
-:global(.dark-theme) .barcodesTable td:nth-child(2) {
+:global(.dark-theme) .barcodesTable td:nth-child(3) {
   color: var(--text-color);
-}
-
-.barcodesTable th:nth-child(3),
-.barcodesTable td:nth-child(3) {
-  /* Descripción */
-  min-width: 200px;
 }
 
 .barcodesTable th:nth-child(4),
 .barcodesTable td:nth-child(4) {
+  /* Descripción */
+  min-width: 200px;
+}
+
+.barcodesTable th:nth-child(5),
+.barcodesTable td:nth-child(5) {
   /* Precio */
   width: 120px;
   text-align: right;
 }
 
-.barcodesTable th:nth-child(5),
-.barcodesTable td:nth-child(5) {
+.barcodesTable th:nth-child(6),
+.barcodesTable td:nth-child(6) {
   /* Cantidad */
   width: 100px;
   text-align: center;
 }
 
-.barcodesTable th:nth-child(6),
-.barcodesTable td:nth-child(6) {
+.barcodesTable th:nth-child(7),
+.barcodesTable td:nth-child(7) {
   /* Acciones */
   width: 80px;
   text-align: center;
@@ -793,18 +814,35 @@
 
   .barcodesTable th,
   .barcodesTable td {
-    padding: 0.5rem 0.375rem;
+    padding: 0.5rem 0.2rem;
   }
 
+  /* Checkbox column - compact */
   .barcodesTable th:nth-child(1),
   .barcodesTable td:nth-child(1) {
-    width: 50px;
+    width: 32px;
+    padding: 0.5rem 0.2rem !important;
   }
 
+  /* # column - minimal */
   .barcodesTable th:nth-child(2),
   .barcodesTable td:nth-child(2) {
-    width: 120px;
-    font-size: 0.75rem;
+    width: 28px;
+    padding: 0.5rem 0.15rem !important;
+    text-align: center;
+    font-size: 0.7rem;
+  }
+
+  /* Código EAN column - fixed width for 13 digits */
+  .barcodesTable th:nth-child(3),
+  .barcodesTable td:nth-child(3) {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+    font-size: 0.7rem;
+    padding: 0.5rem 0.25rem !important;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
   }
 
   .descriptionInput,
@@ -836,6 +874,35 @@
     width: 35px;
     height: 35px;
     font-size: 1rem;
+  }
+
+  /* Botones de guardar compactos en móvil */
+  .saveButtonsContainer {
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: nowrap;
+  }
+
+  .saveChangesBtn,
+  .saveAsNewBtn {
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    align-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+  }
+
+  .saveChangesBtn svg,
+  .saveAsNewBtn svg {
+    margin: 0;
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .saveBtnText {
+    display: none;
   }
 
   .modal {
@@ -2383,8 +2450,8 @@
   .mobileArrowCell {
     display: table-cell !important;
     text-align: center;
-    width: 40px;
-    padding: 0.5rem 0.25rem !important;
+    width: 32px;
+    padding: 0.5rem 0.15rem !important;
   }
 
   /* Botón de flecha */
@@ -2394,14 +2461,14 @@
     color: #94a3b8;
     cursor: pointer;
     font-size: 0.8rem;
-    padding: 6px;
+    padding: 4px;
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
   }
 
   .mobileArrowBtn:hover {
@@ -2426,10 +2493,10 @@
   .descriptionColumn,
   .priceColumn {
     display: table-cell !important;
-    width: 45px !important;
-    max-width: 45px !important;
-    min-width: 45px !important;
-    padding: 0.5rem 0.25rem !important;
+    width: 38px !important;
+    max-width: 38px !important;
+    min-width: 38px !important;
+    padding: 0.5rem 0.15rem !important;
     text-align: center !important;
   }
 

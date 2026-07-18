@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import styles from '../../styles/Landing.module.css';
 import { useLimits } from '../../hooks/useLimits';
@@ -5,18 +6,21 @@ import { useLimits } from '../../hooks/useLimits';
 export default function Pricing() {
   const { user, setIsAuthModalOpen } = useAuth();
   const { limits } = useLimits();
+  const [isAnnual, setIsAnnual] = useState(false);
 
-  // Enlace de pago de Stripe (Reemplazar con enlace real de producción)
-  const STRIPE_PRO_PAYMENT_LINK = 'https://buy.stripe.com/test_6oE01K905e94b2E4gg';
+  // Enlaces de pago de Stripe (Reemplazar con enlaces reales de producción)
+  const STRIPE_PRO_MONTHLY_LINK = 'https://buy.stripe.com/test_6oE01K905e94b2E4gg';
+  const STRIPE_PRO_YEARLY_LINK = 'https://buy.stripe.com/test_8wY4i013z2etb2E4gg';
 
   const handleProPlan = () => {
     if (!user) {
       // Si el usuario no está logeado, abrimos el modal de login
       setIsAuthModalOpen(true);
     } else {
-      // Si está logeado, lo enviamos al enlace de pago de Stripe
+      // Si está logeado, lo enviamos al enlace de pago de Stripe correspondiente
       // Pasamos su email en la URL si Stripe lo soporta, o simplemente redirigimos
-      const paymentUrl = new URL(STRIPE_PRO_PAYMENT_LINK);
+      const stripeLink = isAnnual ? STRIPE_PRO_YEARLY_LINK : STRIPE_PRO_MONTHLY_LINK;
+      const paymentUrl = new URL(stripeLink);
       paymentUrl.searchParams.append('prefilled_email', user.email || '');
       paymentUrl.searchParams.append('client_reference_id', user.uid);
       window.location.href = paymentUrl.toString();
@@ -36,16 +40,44 @@ export default function Pricing() {
       <div className={styles.sectionHeader}>
         <h2 className={styles.sectionTitle}>Planes sencillos para tu negocio</h2>
         <p className={styles.sectionSubtitle}>
-          Genera etiquetas de forma gratuita o accede a la automatización masiva, carga desde Excel y mayor almacenamiento en la nube con nuestro Plan Pro de por vida.
+          Genera etiquetas de forma gratuita o accede a la automatización masiva, carga desde Excel y mayor almacenamiento en la nube con nuestro Plan Pro.
         </p>
+
+        {/* Toggle de Facturación */}
+        <div className={styles.toggleContainer}>
+          <span 
+            className={`${styles.toggleLabel} ${!isAnnual ? styles.activeLabel : ''}`}
+            onClick={() => setIsAnnual(false)}
+          >
+            Mensual
+          </span>
+          <button 
+            className={`${styles.toggleSwitch} ${isAnnual ? styles.toggleSwitchActive : ''}`} 
+            onClick={() => setIsAnnual(!isAnnual)}
+            aria-label="Alternar facturación mensual y anual"
+          >
+            <span className={styles.toggleSlider} />
+          </button>
+          <span 
+            className={`${styles.toggleLabel} ${isAnnual ? styles.activeLabel : ''}`}
+            onClick={() => setIsAnnual(true)}
+          >
+            Anual <span className={styles.discountBadge}>-20%</span>
+          </span>
+        </div>
       </div>
 
       <div className={styles.pricingGrid}>
         {/* Plan Gratis */}
         <div className={styles.pricingCard}>
           <h3 className={styles.planName}>Gratis</h3>
-          <div className={styles.planPrice}>
-            $0 <span className={styles.planPeriod}>/ siempre gratis</span>
+          <div key={isAnnual ? 'free-annual' : 'free-monthly'} className={styles.priceAnimation}>
+            <div className={styles.planPrice}>
+              $0 <span className={styles.planPeriod}>/ siempre gratis</span>
+            </div>
+            <div className={styles.planExplanation}>
+              Acceso básico y herramientas esenciales
+            </div>
           </div>
           <ul className={styles.planFeatures}>
             <li>
@@ -82,8 +114,13 @@ export default function Pricing() {
         <div className={`${styles.pricingCard} ${styles.pricingCardPopular}`}>
           <div className={styles.popularBadge}>Recomendado</div>
           <h3 className={styles.planName}>Pro</h3>
-          <div className={styles.planPrice}>
-            $9 <span className={styles.planPeriod}>/ pago único</span>
+          <div key={isAnnual ? 'pro-annual' : 'pro-monthly'} className={styles.priceAnimation}>
+            <div className={styles.planPrice}>
+              {isAnnual ? '$4' : '$5'} <span className={styles.planPeriod}>/ mes</span>
+            </div>
+            <div className={styles.planExplanation}>
+              {isAnnual ? 'Facturado anualmente: $48 / año' : 'Facturado mensualmente: $5 / mes'}
+            </div>
           </div>
           <ul className={styles.planFeatures}>
             <li>
@@ -109,7 +146,7 @@ export default function Pricing() {
             className={`${styles.pricingButton} ${styles.btnSolid}`}
             onClick={handleProPlan}
           >
-            Adquirir Plan Pro por $9 (Acceso de por Vida)
+            {isAnnual ? 'Suscribirse al Plan Pro Anual ($48 / año)' : 'Suscribirse al Plan Pro Mensual ($5 / mes)'}
           </button>
         </div>
       </div>
