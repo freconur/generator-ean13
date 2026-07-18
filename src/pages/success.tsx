@@ -4,9 +4,11 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { useAuth } from '../context/AuthContext';
 import { useEffect, useState } from 'react';
+import { useLimits } from '../hooks/useLimits';
 
 export default function Success() {
   const { user } = useAuth();
+  const { limits } = useLimits();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -129,7 +131,7 @@ export default function Success() {
             </Link>
 
             <a
-              href="https://wa.me/51999999999?text=Hola,%20acabo%20de%20adquirir%20el%20plan%20Pro%20de%20EAN-13%20Generator"
+              href={`https://wa.me/${limits.whatsappNumber}?text=Hola,%20acabo%20de%20adquirir%20el%20plan%20Pro%20de%20EAN-13%20Generator`}
               target="_blank"
               rel="noopener noreferrer"
               style={{

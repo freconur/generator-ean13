@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import styles from '../styles/Home.module.css';
@@ -199,6 +199,9 @@ export default function BarcodeForm({
   const [quickAddQty, setQuickAddQty] = useState<number>(1);
   const [quickAddDesc, setQuickAddDesc] = useState<string>('');
   const [quickAddPrice, setQuickAddPrice] = useState<string>('');
+  const [isQuickAdding, setIsQuickAdding] = useState<boolean>(false);
+  const [isListExpanded, setIsListExpanded] = useState<boolean>(true);
+  const [expandedRowIndex, setExpandedRowIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -216,9 +219,6 @@ export default function BarcodeForm({
 
   useEffect(() => {
     setMounted(true);
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
   }, []);
 
   useEffect(() => {
@@ -449,6 +449,7 @@ export default function BarcodeForm({
       hasPrice: enablePrice,
       print: true
     }]);
+    setIsListExpanded(true);
     setInputCode('');
     setQuantity(1);
     setDescription('');
@@ -1101,7 +1102,10 @@ export default function BarcodeForm({
                 </svg>
                 <h3 className={styles.importModalTitle} style={{ margin: 0, fontSize: '1.1rem' }}>Producto Seleccionado</h3>
               </div>
-              <button className={styles.importModalCloseBtn} onClick={() => setShowQuickPrintConfigModal(false)}>×</button>
+              <button className={styles.importModalCloseBtn} onClick={() => {
+                setShowQuickPrintConfigModal(false);
+                setIsReaderOpen(true);
+              }}>×</button>
             </div>
             <div className={styles.importModalBody} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
@@ -1158,7 +1162,10 @@ export default function BarcodeForm({
 
               <button
                 type="button"
-                onClick={() => setShowQuickPrintConfigModal(false)}
+                onClick={() => {
+                  setShowQuickPrintConfigModal(false);
+                  setIsReaderOpen(true);
+                }}
                 className={styles.saveChangesBtn}
                 style={{ width: '100%', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}
               >
@@ -1183,7 +1190,10 @@ export default function BarcodeForm({
                 </svg>
                 <h3 className={styles.importModalTitle} style={{ margin: 0, fontSize: '1.1rem' }}>Producto no Registrado</h3>
               </div>
-              <button className={styles.importModalCloseBtn} onClick={() => setShowQuickAddModal(false)}>×</button>
+              <button className={styles.importModalCloseBtn} onClick={() => {
+                setShowQuickAddModal(false);
+                setIsReaderOpen(true);
+              }}>×</button>
             </div>
             <div className={styles.importModalBody} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <p style={{ margin: '0', fontSize: '14px', lineHeight: '1.5', color: 'var(--text-secondary, #475569)' }}>
@@ -1245,6 +1255,7 @@ export default function BarcodeForm({
                   }}
                   className={styles.saveAsNewBtn}
                   style={{ background: 'var(--hover-bg, rgba(0, 0, 0, 0.03))', color: 'var(--text-secondary)', boxShadow: 'none', border: '1px solid var(--border-color)', padding: '8px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}
+                  disabled={isQuickAdding}
                 >
                   Cancelar
                 </button>
@@ -1258,17 +1269,18 @@ export default function BarcodeForm({
                       return;
                     }
 
-                    // Agregar código al lote
-                    addCode(
-                      scannedCodeToInsert,
-                      quickAddQty,
-                      enableDescription ? quickAddDesc.trim() : '',
-                      priceVal
-                    );
+                    setIsQuickAdding(true);
+                    try {
+                      // Agregar código al lote
+                      addCode(
+                        scannedCodeToInsert,
+                        quickAddQty,
+                        enableDescription ? quickAddDesc.trim() : '',
+                        priceVal
+                      );
 
-                    // Sincronizar con Firestore en caliente si hay lote activo
-                    if (user && loadedBatchId) {
-                      try {
+                      // Sincronizar con Firestore en caliente si hay lote activo
+                      if (user && loadedBatchId) {
                         const newDocRef = doc(collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items'));
                         const itemData = {
                           code: scannedCodeToInsert,
@@ -1283,18 +1295,21 @@ export default function BarcodeForm({
                         };
                         await setDoc(newDocRef, itemData);
                         console.log('✅ Ítem escaneado e insertado en Firestore:', itemData);
-                      } catch (error) {
-                        console.error('Error al insertar ítem escaneado en Firestore:', error);
                       }
+                    } catch (error) {
+                      console.error('Error al insertar ítem escaneado en Firestore:', error);
+                    } finally {
+                      setIsQuickAdding(false);
+                      setShowQuickAddModal(false);
+                      // Reactivar lector de cámara de forma automática para no interrumpir el flujo
+                      setIsReaderOpen(true);
                     }
-
-                    setShowQuickAddModal(false);
-                    alert(`¡Código "${scannedCodeToInsert}" agregado con éxito para impresión!`);
                   }}
                   className={styles.saveChangesBtn}
                   style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}
+                  disabled={isQuickAdding}
                 >
-                  Guardar y Agregar
+                  {isQuickAdding ? 'Guardando...' : 'Guardar y Agregar'}
                 </button>
               </div>
             </div>
@@ -1309,6 +1324,7 @@ export default function BarcodeForm({
           isOpen={isReaderOpen}
           onClose={() => setIsReaderOpen(false)}
           onScanSuccess={(code) => {
+            setIsListExpanded(true);
             const existingIndex = barcodes.findIndex(item => item.code === code);
             if (existingIndex !== -1) {
               // El código YA existe en el lote:
@@ -1324,9 +1340,9 @@ export default function BarcodeForm({
                 setFlashingIndex(null);
               }, 2200);
 
-              // 3. Hacer scroll suave hacia la fila
+              // 3. Hacer scroll suave hacia la fila o tarjeta
               setTimeout(() => {
-                const rowEl = document.getElementById(`barcode-row-${existingIndex}`);
+                const rowEl = document.getElementById(`barcode-row-${existingIndex}`) || document.getElementById(`barcode-card-${existingIndex}`);
                 if (rowEl) {
                   rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
@@ -1336,6 +1352,7 @@ export default function BarcodeForm({
               setPendingEditCodeIndex(existingIndex);
               setShowQuickPrintConfigModal(true);
               setIsReaderOpen(false); // Cerramos el lector
+              setExpandedRowIndex(existingIndex);
             } else {
               // El código NO existe en el lote:
               if (isReadOnly) {
@@ -1370,7 +1387,20 @@ export default function BarcodeForm({
         <div className={styles.savedCodesContainer} style={{ marginTop: '2rem', width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-              <h2 className={styles.subtitle} style={{ margin: 0 }}>Códigos Escaneados</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 className={styles.subtitle} style={{ margin: 0 }}>Códigos Escaneados</h2>
+                <button
+                  type="button"
+                  onClick={() => setIsListExpanded(prev => !prev)}
+                  className={styles.accordionToggleBtn}
+                  aria-expanded={isListExpanded}
+                  title={isListExpanded ? "Colapsar lista" : "Expandir lista"}
+                >
+                  <span className={`${styles.accordionArrow} ${isListExpanded ? styles.accordionArrowExpanded : ''}`}>
+                    ▼
+                  </span>
+                </button>
+              </div>
               <div className={styles.searchBox}>
                 <svg className={styles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="11" cy="11" r="8" />
@@ -1440,306 +1470,497 @@ export default function BarcodeForm({
             )}
           </div>
           
-          <div className={styles.tableContainer}>
-            <table className={styles.barcodesTable}>
-              <thead>
-                <tr>
-                  <th style={{ width: '40px', textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={barcodes.length > 0 && barcodes.every(item => item.print !== false)}
-                      ref={(el) => {
-                        if (el) {
-                          const allChecked = barcodes.length > 0 && barcodes.every(item => item.print !== false);
-                          const noneChecked = barcodes.every(item => item.print === false);
-                          el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
-                        }
-                      }}
-                      onChange={async (e) => {
-                        if (isReadOnly) return;
-                        const checked = e.target.checked;
-                        setBarcodes(prev => prev.map(item => ({ ...item, print: checked })));
-                        
-                        // Sincronizar todos a Firestore en caliente si aplica
-                        if (user && loadedBatchId) {
-                          const promises = barcodes.map(async (item) => {
-                            if (item.id) {
-                              const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-                              await updateDoc(itemDocRef, { print: checked });
+          {isListExpanded && (
+            <div className={styles.tableContainer}>
+              <table className={styles.barcodesTable}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={barcodes.length > 0 && barcodes.every(item => item.print !== false)}
+                        ref={(el) => {
+                          if (el) {
+                            const allChecked = barcodes.length > 0 && barcodes.every(item => item.print !== false);
+                            const noneChecked = barcodes.every(item => item.print === false);
+                            el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
+                          }
+                        }}
+                        onChange={async (e) => {
+                          if (isReadOnly) return;
+                          const checked = e.target.checked;
+                          setBarcodes(prev => prev.map(item => ({ ...item, print: checked })));
+                          
+                          // Sincronizar todos a Firestore en caliente si aplica
+                          if (user && loadedBatchId) {
+                            const promises = barcodes.map(async (item) => {
+                              if (item.id) {
+                                const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+                                await updateDoc(itemDocRef, { print: checked });
+                              }
+                            });
+                            await Promise.all(promises);
+                          }
+                        }}
+                        disabled={isReadOnly}
+                        className={styles.tableCheckbox}
+                        title="Seleccionar / Deseleccionar todos para imprimir"
+                        style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                      />
+                    </th>
+                    <th>#</th>
+                    <th>Código EAN</th>
+                    <th className={styles.descriptionColumn}>
+                      <div className={styles.headerCellContent}>
+                        <input
+                          type="checkbox"
+                          checked={barcodes.length > 0 && barcodes.every(item => item.hasDescription)}
+                          ref={(el) => {
+                            if (el) {
+                              const allChecked = barcodes.length > 0 && barcodes.every(item => item.hasDescription);
+                              const noneChecked = barcodes.every(item => !item.hasDescription);
+                              el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
                             }
-                          });
-                          await Promise.all(promises);
-                        }
-                      }}
-                      disabled={isReadOnly}
-                      className={styles.tableCheckbox}
-                      title="Seleccionar / Deseleccionar todos para imprimir"
-                      style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
-                    />
-                  </th>
-                  <th>#</th>
-                  <th>Código EAN</th>
-                  <th>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <input
-                        type="checkbox"
-                        checked={barcodes.length > 0 && barcodes.every(item => item.hasDescription)}
-                        ref={(el) => {
-                          if (el) {
-                            const allChecked = barcodes.length > 0 && barcodes.every(item => item.hasDescription);
-                            const noneChecked = barcodes.every(item => !item.hasDescription);
-                            el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
-                          }
-                        }}
-                        onChange={async (e) => {
-                          if (isReadOnly) return;
-                          const checked = e.target.checked;
-                          setBarcodes(prev => prev.map(item => ({ ...item, hasDescription: checked })));
-                          
-                          if (user && loadedBatchId) {
-                            const promises = barcodes.map(async (item) => {
-                              if (item.id) {
-                                const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-                                await updateDoc(itemDocRef, { hasDescription: checked });
-                              }
-                            });
-                            await Promise.all(promises);
-                          }
-                        }}
-                        disabled={isReadOnly}
-                        className={styles.tableCheckbox}
-                        title="Seleccionar / Deseleccionar descripción para todos"
-                        style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
-                      />
-                      Descripción
-                    </div>
-                  </th>
-                  <th>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <input
-                        type="checkbox"
-                        checked={barcodes.length > 0 && barcodes.every(item => item.hasPrice)}
-                        ref={(el) => {
-                          if (el) {
-                            const allChecked = barcodes.length > 0 && barcodes.every(item => item.hasPrice);
-                            const noneChecked = barcodes.every(item => !item.hasPrice);
-                            el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
-                          }
-                        }}
-                        onChange={async (e) => {
-                          if (isReadOnly) return;
-                          const checked = e.target.checked;
-                          setBarcodes(prev => prev.map(item => ({ ...item, hasPrice: checked })));
-                          
-                          if (user && loadedBatchId) {
-                            const promises = barcodes.map(async (item) => {
-                              if (item.id) {
-                                const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-                                await updateDoc(itemDocRef, { hasPrice: checked });
-                              }
-                            });
-                            await Promise.all(promises);
-                          }
-                        }}
-                        disabled={isReadOnly}
-                        className={styles.tableCheckbox}
-                        title="Seleccionar / Deseleccionar precio para todos"
-                        style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
-                      />
-                      Precio
-                    </div>
-                  </th>
-                  <th>Cantidad</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  let renderedCount = 0;
-                  const rows = barcodes.map((item, index) => {
-                    const matchesSearch = !searchQuery || 
-                      fuzzyMatch(item.description || '', searchQuery) ||
-                      item.code.includes(searchQuery.trim());
+                          }}
+                          onChange={async (e) => {
+                            if (isReadOnly) return;
+                            const checked = e.target.checked;
+                            setBarcodes(prev => prev.map(item => ({ ...item, hasDescription: checked })));
+                            
+                            if (user && loadedBatchId) {
+                              const promises = barcodes.map(async (item) => {
+                                if (item.id) {
+                                  const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+                                  await updateDoc(itemDocRef, { hasDescription: checked });
+                                }
+                              });
+                              await Promise.all(promises);
+                            }
+                          }}
+                          disabled={isReadOnly}
+                          className={styles.tableCheckbox}
+                          title="Seleccionar / Deseleccionar descripción para todos"
+                          style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                        />
+                        <span className={styles.columnHeaderText}>Descripción</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={styles.columnHeaderIcon}>
+                          <title>Imprimir descripción</title>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                          <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                      </div>
+                    </th>
+                    <th className={styles.priceColumn}>
+                      <div className={styles.headerCellContent}>
+                        <input
+                          type="checkbox"
+                          checked={barcodes.length > 0 && barcodes.every(item => item.hasPrice)}
+                          ref={(el) => {
+                            if (el) {
+                              const allChecked = barcodes.length > 0 && barcodes.every(item => item.hasPrice);
+                              const noneChecked = barcodes.every(item => !item.hasPrice);
+                              el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
+                            }
+                          }}
+                          onChange={async (e) => {
+                            if (isReadOnly) return;
+                            const checked = e.target.checked;
+                            setBarcodes(prev => prev.map(item => ({ ...item, hasPrice: checked })));
+                            
+                            if (user && loadedBatchId) {
+                              const promises = barcodes.map(async (item) => {
+                                if (item.id) {
+                                  const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
+                                  await updateDoc(itemDocRef, { hasPrice: checked });
+                                }
+                              });
+                              await Promise.all(promises);
+                            }
+                          }}
+                          disabled={isReadOnly}
+                          className={styles.tableCheckbox}
+                          title="Seleccionar / Deseleccionar precio para todos"
+                          style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                        />
+                        <span className={styles.columnHeaderText}>Precio</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={styles.columnHeaderIcon}>
+                          <title>Imprimir precio</title>
+                          <line x1="12" y1="1" x2="12" y2="23"></line>
+                          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                        </svg>
+                      </div>
+                    </th>
+                    <th className={styles.desktopColumn}>Cantidad</th>
+                    <th className={styles.desktopColumn}>Acciones</th>
+                    <th className={styles.mobileArrowHeader} style={{ width: '40px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let renderedCount = 0;
+                    const rows = barcodes.map((item, index) => {
+                      const matchesSearch = !searchQuery || 
+                        fuzzyMatch(item.description || '', searchQuery) ||
+                        item.code.includes(searchQuery.trim());
 
-                    if (!matchesSearch) return null;
-                    renderedCount++;
+                      if (!matchesSearch) return null;
+                      renderedCount++;
 
-                    return (
-                      <tr 
-                        key={index} 
-                        id={`barcode-row-${index}`}
-                        className={`${item.isDuplicate ? styles.duplicateRow : ''} ${item.print === false ? styles.nonPrintingRow : ''} ${flashingIndex === index ? styles.flashingRow : ''}`}
-                      >
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={item.print !== false}
-                            onChange={(e) => {
-                              if (isReadOnly) return;
-                              const checked = e.target.checked;
-                              setBarcodes(prev => prev.map((barcode, i) => 
-                                i === index ? { ...barcode, print: checked } : barcode
-                              ));
-                              handleInlineUpdateField(index, { print: checked });
+                      const isExpanded = expandedRowIndex === index;
+
+                      return (
+                        <Fragment key={index}>
+                          <tr 
+                            id={`barcode-row-${index}`}
+                            className={`${item.isDuplicate ? styles.duplicateRow : ''} ${item.print === false ? styles.nonPrintingRow : ''} ${flashingIndex === index ? styles.flashingRow : ''} ${isExpanded ? styles.expandedRowParent : ''}`}
+                            onClick={(e) => {
+                              if (window.innerWidth <= 768) {
+                                const target = e.target as HTMLElement;
+                                if (!target.closest('input, button, select, textarea, a, .clickable-ignore')) {
+                                  setExpandedRowIndex(isExpanded ? null : index);
+                                }
+                              }
                             }}
-                            className={styles.tableCheckbox}
-                            title="Incluir este código en el PDF"
-                            style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
-                            disabled={isReadOnly}
-                          />
-                        </td>
-                        <td>{index + 1}</td>
-                        <td>{highlightText(item.code, searchQuery)}</td>
-                        <td>
-                          <div className={styles.tableCellWithCheckbox}>
-                            <input
-                              type="checkbox"
-                              checked={item.hasDescription}
-                              onChange={(e) => {
-                                if (isReadOnly) return;
-                                const checked = e.target.checked;
-                                setBarcodes(prev => prev.map((barcode, i) => 
-                                  i === index ? { ...barcode, hasDescription: checked } : barcode
-                                ));
-                                handleInlineUpdateField(index, { hasDescription: checked });
-                              }}
-                              className={styles.tableCheckbox}
-                              title="Imprimir descripción en PDF"
-                              disabled={isReadOnly}
-                            />
-                            {editingDescIndex === index && !isReadOnly ? (
-                              <input
-                                ref={editingInputRef}
-                                type="text"
-                                value={item.description || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val.length > 200) {
-                                    alert("La descripción no puede superar los 200 caracteres.");
-                                  }
-                                  setBarcodes(prev => prev.map((barcode, i) => 
-                                    i === index ? { ...barcode, description: val.slice(0, 200) } : barcode
-                                  ));
-                                }}
-                                className={styles.descriptionInput}
-                                placeholder="Descripción"
-                                onBlur={(e) => {
-                                  const val = String(e.target.value || '').toLowerCase().trim();
-                                  setBarcodes(prev => prev.map((barcode, i) => 
-                                    i === index ? { ...barcode, description: val } : barcode
-                                  ));
-                                  handleInlineUpdateField(index, { description: val });
-                                  setEditingDescIndex(null);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    (e.target as HTMLInputElement).blur();
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <div
-                                className={styles.descriptionText}
-                                onClick={() => !isReadOnly && setEditingDescIndex(index)}
-                                style={isReadOnly ? { cursor: 'not-allowed' } : {}}
-                              >
-                                {highlightText(item.description || '', searchQuery)}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div className={styles.tableCellWithCheckbox}>
-                            <input
-                              type="checkbox"
-                              checked={item.hasPrice}
-                              onChange={(e) => {
-                                if (isReadOnly) return;
-                                const checked = e.target.checked;
-                                setBarcodes(prev => prev.map((barcode, i) => 
-                                  i === index ? { ...barcode, hasPrice: checked } : barcode
-                                ));
-                                handleInlineUpdateField(index, { hasPrice: checked });
-                              }}
-                              className={styles.tableCheckbox}
-                              title="Imprimir precio en PDF"
-                              disabled={isReadOnly}
-                            />
-                            <input
-                              type="number"
-                              value={item.price || ''}
-                              onChange={(e) => {
-                                if (isReadOnly) return;
-                                const val = parseFloat(e.target.value) || 0;
-                                if (val < 0) {
-                                  alert("El precio no puede ser negativo.");
-                                }
-                                if (val > 999999) {
-                                  alert("El precio máximo permitido es $999,999.");
-                                }
-                                setBarcodes(prev => prev.map((barcode, i) => 
-                                  i === index ? { ...barcode, price: Math.max(0, Math.min(val, 999999)) } : barcode
-                                ));
-                              }}
-                              className={styles.priceInput}
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              disabled={isReadOnly}
-                              onBlur={(e) => {
-                                if (isReadOnly) return;
-                                const val = parseFloat(e.target.value) || 0;
-                                const finalPrice = Math.max(0, Math.min(val, 999999));
-                                handleInlineUpdateField(index, { price: finalPrice });
-                              }}
-                              onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    (e.target as HTMLInputElement).blur();
-                                  }
-                                }}
-                              />
-                            </div>
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              value={tempTableQuantities[index] !== undefined ? tempTableQuantities[index] : item.quantity}
-                              onChange={(e) => !isReadOnly && handleTableQuantityChange(e, index)}
-                              onBlur={(e) => !isReadOnly && handleTableQuantityBlur(e, index)}
-                              onFocus={() => !isReadOnly && handleTableQuantityFocus(index)}
-                              className={styles.quantityInput}
-                              pattern="[1-9][0-9]*"
-                              inputMode="numeric"
-                              min="1"
-                              disabled={isReadOnly}
-                            />
-                          </td>
-                        <td>
-                          <button 
-                            onClick={() => handleRemoveCode(index)}
-                            className={styles.removeButton}
                           >
-                            ×
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  });
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={item.print !== false}
+                                onChange={(e) => {
+                                  if (isReadOnly) return;
+                                  const checked = e.target.checked;
+                                  setBarcodes(prev => prev.map((barcode, i) => 
+                                    i === index ? { ...barcode, print: checked } : barcode
+                                  ));
+                                  handleInlineUpdateField(index, { print: checked });
+                                }}
+                                className={styles.tableCheckbox}
+                                title="Incluir este código en el PDF"
+                                style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                                disabled={isReadOnly}
+                              />
+                            </td>
+                            <td>{index + 1}</td>
+                            <td>{highlightText(item.code, searchQuery)}</td>
+                            <td className={styles.descriptionColumn}>
+                              <div className={styles.tableCellWithCheckbox}>
+                                <input
+                                  type="checkbox"
+                                  checked={item.hasDescription}
+                                  onChange={(e) => {
+                                    if (isReadOnly) return;
+                                    const checked = e.target.checked;
+                                    setBarcodes(prev => prev.map((barcode, i) => 
+                                      i === index ? { ...barcode, hasDescription: checked } : barcode
+                                    ));
+                                    handleInlineUpdateField(index, { hasDescription: checked });
+                                  }}
+                                  className={styles.tableCheckbox}
+                                  title="Imprimir descripción en PDF"
+                                  disabled={isReadOnly}
+                                />
+                                {editingDescIndex === index && !isReadOnly ? (
+                                  <input
+                                    ref={editingInputRef}
+                                    type="text"
+                                    value={item.description || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val.length > 200) {
+                                        alert("La descripción no puede superar los 200 caracteres.");
+                                      }
+                                      setBarcodes(prev => prev.map((barcode, i) => 
+                                        i === index ? { ...barcode, description: val.slice(0, 200) } : barcode
+                                      ));
+                                    }}
+                                    className={styles.descriptionInput}
+                                    placeholder="Descripción"
+                                    onBlur={(e) => {
+                                      const val = String(e.target.value || '').toLowerCase().trim();
+                                      setBarcodes(prev => prev.map((barcode, i) => 
+                                        i === index ? { ...barcode, description: val } : barcode
+                                      ));
+                                      handleInlineUpdateField(index, { description: val });
+                                      setEditingDescIndex(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        (e.target as HTMLInputElement).blur();
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    className={styles.descriptionText}
+                                    onClick={() => !isReadOnly && setEditingDescIndex(index)}
+                                    style={isReadOnly ? { cursor: 'not-allowed' } : {}}
+                                  >
+                                    {highlightText(item.description || '', searchQuery)}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className={styles.priceColumn}>
+                              <div className={styles.tableCellWithCheckbox}>
+                                <input
+                                  type="checkbox"
+                                  checked={item.hasPrice}
+                                  onChange={(e) => {
+                                    if (isReadOnly) return;
+                                    const checked = e.target.checked;
+                                    setBarcodes(prev => prev.map((barcode, i) => 
+                                      i === index ? { ...barcode, hasPrice: checked } : barcode
+                                    ));
+                                    handleInlineUpdateField(index, { hasPrice: checked });
+                                  }}
+                                  className={styles.tableCheckbox}
+                                  title="Imprimir precio en PDF"
+                                  disabled={isReadOnly}
+                                />
+                                <input
+                                  type="number"
+                                  value={item.price || ''}
+                                  onChange={(e) => {
+                                    if (isReadOnly) return;
+                                    const val = parseFloat(e.target.value) || 0;
+                                    if (val < 0) {
+                                      alert("El precio no puede ser negativo.");
+                                    }
+                                    if (val > 999999) {
+                                      alert("El precio máximo permitido es $999,999.");
+                                    }
+                                    setBarcodes(prev => prev.map((barcode, i) => 
+                                      i === index ? { ...barcode, price: Math.max(0, Math.min(val, 999999)) } : barcode
+                                    ));
+                                  }}
+                                  className={styles.priceInput}
+                                  placeholder="0.00"
+                                  step="0.01"
+                                  min="0"
+                                  disabled={isReadOnly}
+                                  onBlur={(e) => {
+                                    if (isReadOnly) return;
+                                    const val = parseFloat(e.target.value) || 0;
+                                    const finalPrice = Math.max(0, Math.min(val, 999999));
+                                    handleInlineUpdateField(index, { price: finalPrice });
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </td>
+                            <td className={styles.desktopColumn}>
+                              <input
+                                type="text"
+                                value={tempTableQuantities[index] !== undefined ? tempTableQuantities[index] : item.quantity}
+                                onChange={(e) => !isReadOnly && handleTableQuantityChange(e, index)}
+                                onBlur={(e) => !isReadOnly && handleTableQuantityBlur(e, index)}
+                                onFocus={() => !isReadOnly && handleTableQuantityFocus(index)}
+                                className={styles.quantityInput}
+                                pattern="[1-9][0-9]*"
+                                inputMode="numeric"
+                                min="1"
+                                disabled={isReadOnly}
+                              />
+                            </td>
+                            <td className={styles.desktopColumn}>
+                              <button 
+                                onClick={() => handleRemoveCode(index)}
+                                className={styles.removeButton}
+                              >
+                                ×
+                              </button>
+                            </td>
+                            <td className={styles.mobileArrowCell}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedRowIndex(isExpanded ? null : index);
+                                }}
+                                className={`${styles.mobileArrowBtn} ${isExpanded ? styles.mobileArrowBtnExpanded : ''}`}
+                                aria-expanded={isExpanded}
+                                title={isExpanded ? "Cerrar detalles" : "Ver detalles"}
+                              >
+                                ▼
+                              </button>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className={styles.expandedDetailRow}>
+                              <td colSpan={8}>
+                                <div className={styles.expandedDetailPanel}>
+                                  <div className={styles.detailRowItem}>
+                                    <label className={styles.detailLabel}>
+                                      <input
+                                        type="checkbox"
+                                        checked={item.hasDescription}
+                                        onChange={(e) => {
+                                          if (isReadOnly) return;
+                                          const checked = e.target.checked;
+                                          setBarcodes(prev => prev.map((barcode, i) => 
+                                            i === index ? { ...barcode, hasDescription: checked } : barcode
+                                          ));
+                                          handleInlineUpdateField(index, { hasDescription: checked });
+                                        }}
+                                        className={styles.tableCheckbox}
+                                        disabled={isReadOnly}
+                                      />
+                                      <span>Imprimir descripción</span>
+                                    </label>
+                                    {editingDescIndex === index && !isReadOnly ? (
+                                      <input
+                                        ref={editingInputRef}
+                                        type="text"
+                                        value={item.description || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          if (val.length > 200) {
+                                            alert("La descripción no puede superar los 200 caracteres.");
+                                          }
+                                          setBarcodes(prev => prev.map((barcode, i) => 
+                                            i === index ? { ...barcode, description: val.slice(0, 200) } : barcode
+                                          ));
+                                        }}
+                                        className={styles.descriptionInput}
+                                        style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px' }}
+                                        placeholder="Descripción"
+                                        onBlur={(e) => {
+                                          const val = String(e.target.value || '').toLowerCase().trim();
+                                          setBarcodes(prev => prev.map((barcode, i) => 
+                                            i === index ? { ...barcode, description: val } : barcode
+                                          ));
+                                          handleInlineUpdateField(index, { description: val });
+                                          setEditingDescIndex(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            (e.target as HTMLInputElement).blur();
+                                          }
+                                        }}
+                                      />
+                                    ) : (
+                                      <div
+                                        className={styles.descriptionText}
+                                        style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px', cursor: isReadOnly ? 'not-allowed' : 'pointer' }}
+                                        onClick={() => !isReadOnly && setEditingDescIndex(index)}
+                                      >
+                                        {item.description || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Añadir descripción...</span>}
+                                      </div>
+                                    )}
+                                  </div>
 
-                  if (renderedCount === 0) {
-                    return (
-                      <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
-                          No se encontraron códigos que coincidan con la búsqueda.
-                        </td>
-                      </tr>
-                    );
-                  }
-                  return rows;
-                })()}
-              </tbody>
-            </table>
-          </div>
+                                  <div className={styles.detailRowItem}>
+                                    <label className={styles.detailLabel}>
+                                      <input
+                                        type="checkbox"
+                                        checked={item.hasPrice}
+                                        onChange={(e) => {
+                                          if (isReadOnly) return;
+                                          const checked = e.target.checked;
+                                          setBarcodes(prev => prev.map((barcode, i) => 
+                                            i === index ? { ...barcode, hasPrice: checked } : barcode
+                                          ));
+                                          handleInlineUpdateField(index, { hasPrice: checked });
+                                        }}
+                                        className={styles.tableCheckbox}
+                                        disabled={isReadOnly}
+                                      />
+                                      <span>Imprimir precio</span>
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={item.price || ''}
+                                      onChange={(e) => {
+                                        if (isReadOnly) return;
+                                        const val = parseFloat(e.target.value) || 0;
+                                        if (val < 0) {
+                                          alert("El precio no puede ser negativo.");
+                                        }
+                                        if (val > 999999) {
+                                          alert("El precio máximo permitido es $999,999.");
+                                        }
+                                        setBarcodes(prev => prev.map((barcode, i) => 
+                                          i === index ? { ...barcode, price: Math.max(0, Math.min(val, 999999)) } : barcode
+                                        ));
+                                      }}
+                                      className={styles.priceInput}
+                                      style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px', textAlign: 'left' }}
+                                      placeholder="0.00"
+                                      step="0.01"
+                                      min="0"
+                                      disabled={isReadOnly}
+                                      onBlur={(e) => {
+                                        if (isReadOnly) return;
+                                        const val = parseFloat(e.target.value) || 0;
+                                        const finalPrice = Math.max(0, Math.min(val, 999999));
+                                        handleInlineUpdateField(index, { price: finalPrice });
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          (e.target as HTMLInputElement).blur();
+                                        }
+                                      }}
+                                    />
+                                  </div>
+
+                                  <div className={styles.detailRowItem}>
+                                    <span className={styles.detailLabelText}>Cantidad</span>
+                                    <input
+                                      type="text"
+                                      value={tempTableQuantities[index] !== undefined ? tempTableQuantities[index] : item.quantity}
+                                      onChange={(e) => !isReadOnly && handleTableQuantityChange(e, index)}
+                                      onBlur={(e) => !isReadOnly && handleTableQuantityBlur(e, index)}
+                                      onFocus={() => !isReadOnly && handleTableQuantityFocus(index)}
+                                      className={styles.quantityInput}
+                                      style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px', maxWidth: '100px' }}
+                                      pattern="[1-9][0-9]*"
+                                      inputMode="numeric"
+                                      min="1"
+                                      disabled={isReadOnly}
+                                    />
+                                  </div>
+
+                                  <div className={styles.detailRowItem} style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px', display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveCode(index)}
+                                      className={styles.mobileRemoveBtn}
+                                      title="Eliminar código"
+                                    >
+                                      <span style={{ marginRight: '6px', fontSize: '1.2rem', lineHeight: '1' }}>×</span>
+                                      Eliminar
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    });
+
+                    if (renderedCount === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                            No se encontraron códigos que coincidan con la búsqueda.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return rows;
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

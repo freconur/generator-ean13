@@ -24,7 +24,8 @@
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem 1rem; /* Ajustado al quitar navbar fijo */
+  padding: 2rem 1rem;
+  /* Ajustado al quitar navbar fijo */
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -155,7 +156,8 @@
 
 
 /* Campos de entrada */
-.input, .quantityInput {
+.input,
+.quantityInput {
   padding: 0.75rem 1rem;
   font-size: 1rem;
   border: 2px solid var(--border-color);
@@ -315,7 +317,10 @@
   box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
 }
 
-.input:focus, .quantityInput:focus, .descriptionInput:focus, .priceInput:focus {
+.input:focus,
+.quantityInput:focus,
+.descriptionInput:focus,
+.priceInput:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
@@ -384,13 +389,16 @@
 .tableContainer::-webkit-scrollbar {
   height: 6px;
 }
+
 .tableContainer::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .tableContainer::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.3);
   border-radius: 9999px;
 }
+
 .tableContainer::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.5);
 }
@@ -449,7 +457,8 @@
 }
 
 .barcodesTable th:nth-child(1),
-.barcodesTable td:nth-child(1) { /* # */
+.barcodesTable td:nth-child(1) {
+  /* # */
   width: 50px;
   text-align: center;
   font-weight: 600;
@@ -457,7 +466,8 @@
 }
 
 .barcodesTable th:nth-child(2),
-.barcodesTable td:nth-child(2) { /* Código EAN */
+.barcodesTable td:nth-child(2) {
+  /* Código EAN */
   width: 160px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
@@ -469,24 +479,28 @@
 }
 
 .barcodesTable th:nth-child(3),
-.barcodesTable td:nth-child(3) { /* Descripción */
+.barcodesTable td:nth-child(3) {
+  /* Descripción */
   min-width: 200px;
 }
 
 .barcodesTable th:nth-child(4),
-.barcodesTable td:nth-child(4) { /* Precio */
+.barcodesTable td:nth-child(4) {
+  /* Precio */
   width: 120px;
   text-align: right;
 }
 
 .barcodesTable th:nth-child(5),
-.barcodesTable td:nth-child(5) { /* Cantidad */
+.barcodesTable td:nth-child(5) {
+  /* Cantidad */
   width: 100px;
   text-align: center;
 }
 
 .barcodesTable th:nth-child(6),
-.barcodesTable td:nth-child(6) { /* Acciones */
+.barcodesTable td:nth-child(6) {
+  /* Acciones */
   width: 80px;
   text-align: center;
 }
@@ -649,9 +663,19 @@
 
 /* Animaciones */
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-5px); }
-  75% { transform: translateX(5px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
 }
 
 @keyframes slideUp {
@@ -659,6 +683,7 @@
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -668,7 +693,7 @@
 /* Responsive */
 @media (max-width: 768px) {
   .container {
-    padding: 1rem;
+    padding: 0;
   }
 
   .title {
@@ -763,7 +788,7 @@
 
   .barcodesTable {
     font-size: 0.8rem;
-    min-width: 700px;
+    min-width: 100% !important;
   }
 
   .barcodesTable th,
@@ -958,6 +983,7 @@
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1021,6 +1047,7 @@
   transition: all 0.2s ease;
   user-select: none;
 }
+
 .disabledFieldEditable:hover {
   background-color: #f1f5f9;
   color: var(--primary-color);
@@ -1238,31 +1265,31 @@
 /* Responsive para main */
 @media (max-width: 768px) {
   .main {
-    padding: 1.5rem 1rem 2rem 1rem;
+    padding: 1.5rem 12px 2rem 12px;
   }
-  
+
   .section {
     padding: 2rem 0;
   }
-  
+
   .sectionTitle {
     font-size: 1.75rem;
   }
-  
+
   .featuresGrid {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
-  
+
   .featureCard {
     padding: 1.5rem;
   }
-  
+
   .helpContent {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
-  
+
   .helpCard {
     padding: 1.5rem;
   }
@@ -1274,26 +1301,27 @@
 
 @media (max-width: 480px) {
   .main {
-    padding: 1rem 0.5rem 1.5rem 0.5rem;
+    padding: 1rem 12px 1.5rem 12px;
   }
-  
+
   .section {
     padding: 1.5rem 0;
   }
-  
+
   .sectionTitle {
     font-size: 1.5rem;
     margin-bottom: 1.5rem;
   }
-  
-  .featureCard, .helpCard {
+
+  .featureCard,
+  .helpCard {
     padding: 1.25rem;
   }
-  
+
   .featureIcon {
     font-size: 2.5rem;
   }
-  
+
   .aboutContent p {
     font-size: 1rem;
   }
@@ -1785,7 +1813,8 @@
   max-width: 320px;
   background: var(--card-background, white);
   border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 9999px; /* Pill layout */
+  border-radius: 9999px;
+  /* Pill layout */
   padding: 6px 14px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
   transition: all 0.2s ease;
@@ -1873,7 +1902,8 @@
 }
 
 .gs1QuickCorrelativeBtn:hover {
-  background-color: #fffbeb; /* Muy suave amarillo */
+  background-color: #fffbeb;
+  /* Muy suave amarillo */
   border-color: #fcd34d;
   color: #b45309;
   transform: translateY(-1px);
@@ -2020,8 +2050,15 @@
 }
 
 @keyframes dropdownScale {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* Estilos de modo Solo Lectura por degradación de plan */
@@ -2085,7 +2122,7 @@
     align-items: stretch;
     text-align: center;
     gap: 14px;
-    padding: 1.15rem;
+    /* padding: 1.15rem; */
   }
 
   .readOnlyBannerIcon {
@@ -2144,9 +2181,282 @@
 }
 
 @keyframes rowFlashEffect {
-  0% { background-color: rgba(16, 185, 129, 0.35); }
-  30% { background-color: rgba(16, 185, 129, 0.18); }
-  100% { background-color: transparent; }
+  0% {
+    background-color: rgba(16, 185, 129, 0.35);
+  }
+
+  30% {
+    background-color: rgba(16, 185, 129, 0.18);
+  }
+
+  100% {
+    background-color: transparent;
+  }
 }
 
+/* ==========================================
+   Acordeón Inteligente y Tarjetas Responsivas
+   ========================================== */
 
+/* Botón del acordeón */
+.accordionToggleBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color, #1e293b);
+  transition: background-color 0.2s, transform 0.2s;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+}
+
+.accordionToggleBtn:hover {
+  background-color: var(--hover-bg, rgba(0, 0, 0, 0.05));
+}
+
+.accordionArrow {
+  display: inline-block;
+  font-size: 0.75rem;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: rotate(0deg);
+}
+
+.accordionArrowExpanded {
+  transform: rotate(-180deg);
+}
+
+/* Ocultar flechas de acordeón en desktop */
+.mobileArrowHeader,
+.mobileArrowCell {
+  display: none !important;
+}
+
+.desktopColumn {
+  /* Default column behavior */
+}
+
+.descriptionColumn,
+.priceColumn {
+  /* Default column behavior */
+}
+
+.headerCellContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.columnHeaderIcon {
+  display: none;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.columnHeaderText {
+  display: inline;
+}
+
+/* Fila de detalle expandida premium */
+.expandedDetailRow {
+  background-color: #f8fafc;
+}
+
+:global(.dark-theme) .expandedDetailRow {
+  background-color: rgba(30, 41, 59, 0.4);
+}
+
+.expandedDetailRow td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+/* Contenedor del panel de detalles en móvil */
+.expandedDetailPanel {
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-left: 4px solid var(--primary-color, #4f46e5);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  animation: slideDownFade 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+:global(.dark-theme) .expandedDetailPanel {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.5));
+  border-left-color: var(--primary-color, #818cf8);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.detailRowItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detailLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+  cursor: pointer;
+}
+
+.detailLabelText {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+}
+
+/* Botón de eliminar en móvil */
+.mobileRemoveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #fee2e2;
+  color: #ef4444;
+  border: 1px solid #fca5a5;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.mobileRemoveBtn:hover {
+  background-color: #fecaca;
+  color: #dc2626;
+}
+
+.mobileRemoveBtn:active {
+  transform: scale(0.98);
+}
+
+:global(.dark-theme) .mobileRemoveBtn {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+:global(.dark-theme) .mobileRemoveBtn:hover {
+  background-color: rgba(239, 68, 68, 0.25);
+  color: #fecaca;
+}
+
+/* Animación de apertura suave */
+@keyframes slideDownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+    max-height: 0;
+    overflow: hidden;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 500px;
+  }
+}
+
+/* Media query para móviles (pantallas <= 768px) */
+@media (max-width: 768px) {
+  /* Habilitar contenedor de tabla */
+  .tableContainer {
+    display: block !important;
+  }
+
+  /* Ocultar columnas detalladas */
+  .desktopColumn {
+    display: none !important;
+  }
+
+  /* Mostrar flechas de detalles */
+  .mobileArrowHeader,
+  .mobileArrowCell {
+    display: table-cell !important;
+    text-align: center;
+    width: 40px;
+    padding: 0.5rem 0.25rem !important;
+  }
+
+  /* Botón de flecha */
+  .mobileArrowBtn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 6px;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+  }
+
+  .mobileArrowBtn:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+    color: var(--text-color);
+  }
+
+  :global(.dark-theme) .mobileArrowBtn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .mobileArrowBtnExpanded {
+    transform: rotate(-180deg);
+    color: var(--primary-color, #4f46e5);
+  }
+
+  :global(.dark-theme) .mobileArrowBtnExpanded {
+    color: var(--primary-color, #818cf8);
+  }
+
+  /* Estilos responsivos para columnas de descripción y precio en móvil */
+  .descriptionColumn,
+  .priceColumn {
+    display: table-cell !important;
+    width: 45px !important;
+    max-width: 45px !important;
+    min-width: 45px !important;
+    padding: 0.5rem 0.25rem !important;
+    text-align: center !important;
+  }
+
+  .descriptionColumn .headerCellContent,
+  .priceColumn .headerCellContent {
+    justify-content: center !important;
+    gap: 4px !important;
+  }
+
+  .descriptionColumn .tableCellWithCheckbox,
+  .priceColumn .tableCellWithCheckbox {
+    min-width: unset !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  .descriptionColumn .descriptionInput,
+  .descriptionColumn .descriptionText,
+  .priceColumn .priceInput {
+    display: none !important;
+  }
+
+  .columnHeaderText {
+    display: none !important;
+  }
+
+  .columnHeaderIcon {
+    display: inline-block !important;
+  }
+}

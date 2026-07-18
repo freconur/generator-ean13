@@ -182,7 +182,7 @@
   }
   
   .container {
-    padding: 0 1rem;
+    padding: 0 12px;
   }
   
   .mainSection {
@@ -221,7 +221,7 @@
   }
   
   .container {
-    padding: 0 0.75rem;
+    padding: 0 12px;
   }
   
   .mainSection {
@@ -263,28 +263,102 @@
   position: fixed;
   bottom: 24px;
   right: 24px;
-  background-color: var(--success-color);
-  color: #ffffff;
-  border-radius: var(--radius-pill);
+  width: 56px;
+  height: 56px;
+  z-index: 999;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s ease;
+  text-decoration: none;
+  border-radius: 28px;
+  background: transparent;
+}
+
+.whatsappButton:hover {
+  width: 200px;
+  transform: translateY(-3px);
+}
+
+/* Animación de pulso/radar (radial waves) de color verde */
+.whatsappButton::before,
+.whatsappButton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background-color: rgba(37, 211, 102, 0.4);
+  z-index: 1;
+  pointer-events: none;
+  animation: whatsappPulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.4s ease;
+}
+
+.whatsappButton::after {
+  animation-delay: 1.2s;
+}
+
+@keyframes whatsappPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.buttonContent {
+  width: 100%;
+  height: 100%;
+  background-color: #25d366;
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(37, 211, 102, 0.35), 0 8px 24px rgba(0, 0, 0, 0.12);
+  position: relative;
+  z-index: 2;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease, border-radius 0.4s ease;
+}
+
+.whatsappButton:hover .buttonContent {
+  background-color: #20ba5a;
+  box-shadow: 0 6px 20px rgba(37, 211, 102, 0.5), 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.iconContainer {
   width: 56px;
   height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-lg);
-  z-index: 999;
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s ease, box-shadow 0.2s ease;
-  text-decoration: none;
-}
-
-.whatsappButton:hover {
-  background-color: var(--success-hover);
-  transform: scale(1.1) translateY(-2px);
-  box-shadow: var(--shadow-xl);
+  flex-shrink: 0;
 }
 
 .whatsappIcon {
   width: 28px;
   height: 28px;
-  fill: currentColor;
+  fill: #ffffff;
+  display: block;
+}
+
+.buttonText {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  pointer-events: none;
+  padding-right: 24px;
+}
+
+.whatsappButton:hover .buttonText {
+  opacity: 1;
+  transform: translateX(0);
+  transition-delay: 0.15s;
 } 

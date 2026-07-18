@@ -141,16 +141,29 @@ const Navbar: React.FC<NavbarProps> = ({ className }) => {
                   </div>
                   
                   <Link href="/dashboard" className={styles.dropdownItem} onClick={() => setIsDropdownOpen(false)}>
-                    📊 Generador Pro
+                    <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                      <rect x="3" y="3" width="7" height="9" rx="1" />
+                      <rect x="14" y="3" width="7" height="5" rx="1" />
+                      <rect x="14" y="12" width="7" height="9" rx="1" />
+                      <rect x="3" y="16" width="7" height="5" rx="1" />
+                    </svg>
+                    {profile?.subscription?.tier === 'pro' ? 'Generador Pro' : 'Generador'}
                   </Link>
 
                   <Link href="/profile" className={styles.dropdownItem} onClick={() => setIsDropdownOpen(false)}>
-                    👤 Mi Cuenta
+                    <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                      <circle cx="12" cy="7" r="4" />
+                    </svg>
+                    Mi Cuenta
                   </Link>
 
                   {profile?.role === 'admin' && (
                     <Link href="/admin" className={styles.dropdownItem} onClick={() => setIsDropdownOpen(false)}>
-                      🛡️ Administración
+                      <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                      </svg>
+                      Administración
                     </Link>
                   )}
 
@@ -161,7 +174,12 @@ const Navbar: React.FC<NavbarProps> = ({ className }) => {
                       setIsDropdownOpen(false);
                     }}
                   >
-                    🚪 Cerrar Sesión
+                    <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Cerrar Sesión
                   </button>
                 </div>
               )}
@@ -236,16 +254,29 @@ const Navbar: React.FC<NavbarProps> = ({ className }) => {
               </div>
               
               <Link href="/dashboard" className={styles.mobileDropdownItem} onClick={handleLinkClick}>
-                📊 Generador Pro
+                <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="7" height="9" rx="1" />
+                  <rect x="14" y="3" width="7" height="5" rx="1" />
+                  <rect x="14" y="12" width="7" height="9" rx="1" />
+                  <rect x="3" y="16" width="7" height="5" rx="1" />
+                </svg>
+                {profile?.subscription?.tier === 'pro' ? 'Generador Pro' : 'Generador'}
               </Link>
 
               <Link href="/profile" className={styles.mobileDropdownItem} onClick={handleLinkClick}>
-                👤 Mi Cuenta
+                <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                Mi Cuenta
               </Link>
 
               {profile?.role === 'admin' && (
                 <Link href="/admin" className={styles.mobileDropdownItem} onClick={handleLinkClick}>
-                  🛡️ Administración
+                  <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
+                  Administración
                 </Link>
               )}
 
@@ -257,7 +288,12 @@ const Navbar: React.FC<NavbarProps> = ({ className }) => {
                 }}
                 style={{ background: 'transparent', border: 'none', width: '100%', textAlign: 'left', fontFamily: 'inherit' }}
               >
-                🚪 Cerrar Sesión
+                <svg className={styles.itemIcon} viewBox="0 0 24 24">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Cerrar Sesión
               </button>
             </div>
           ) : (

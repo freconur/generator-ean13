@@ -33,6 +33,7 @@ export default function Admin() {
   const [freeMaxCodes, setFreeMaxCodes] = useState<number>(30);
   const [proMaxBatches, setProMaxBatches] = useState<number>(20);
   const [proMaxCodes, setProMaxCodes] = useState<number>(1000);
+  const [whatsappNumber, setWhatsappNumber] = useState<string>('51999999999');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function Admin() {
       setFreeMaxCodes(limits.free?.maxCodesPerBatch ?? 30);
       setProMaxBatches(limits.pro?.maxBatches ?? 20);
       setProMaxCodes(limits.pro?.maxCodesPerBatch ?? 1000);
+      setWhatsappNumber(limits.whatsappNumber ?? '51999999999');
     }
   }, [limits]);
 
@@ -61,7 +63,8 @@ export default function Admin() {
         pro: {
           maxCodesPerBatch: proMaxCodes,
           maxBatches: proMaxBatches
-        }
+        },
+        whatsappNumber: whatsappNumber
       });
       alert('Límites actualizados con éxito en la base de datos.');
     } catch (error) {
@@ -685,6 +688,31 @@ export default function Admin() {
                       </div>
                     </div>
 
+                  </div>
+
+                  {/* Sección Configuración de Soporte */}
+                  <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--border-color)', marginBottom: '24px' }}>
+                    <h4 className={adminStyles.limitPlanTitle} style={{ marginBottom: '16px' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#25D366', marginRight: '8px' }}>
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                      </svg>
+                      Soporte de WhatsApp Vinculado
+                    </h4>
+                    <div className={adminStyles.formGroup} style={{ maxWidth: '400px' }}>
+                      <label htmlFor="whatsappNumberInput" className={adminStyles.label}>Número de WhatsApp de soporte:</label>
+                      <input
+                        id="whatsappNumberInput"
+                        type="text"
+                        placeholder="Ej. 51999999999"
+                        value={whatsappNumber}
+                        onChange={(e) => setWhatsappNumber(e.target.value)}
+                        className={adminStyles.inputNumber}
+                        style={{ marginTop: '8px' }}
+                      />
+                      <small style={{ display: 'block', marginTop: '6px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                        Introduce el número completo, incluyendo el código de país, sin espacios, guiones ni el símbolo +.
+                      </small>
+                    </div>
                   </div>
 
                   <button 

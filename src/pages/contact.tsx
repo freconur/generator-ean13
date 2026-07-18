@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import AuthModal from '@/components/AuthModal';
 import styles from '@/styles/Contact.module.css';
+import { useLimits } from '@/hooks/useLimits';
 
 interface FormFields {
   name: string;
@@ -20,6 +21,7 @@ interface FormErrors {
 }
 
 export default function ContactPage() {
+  const { limits } = useLimits();
   const [fields, setFields] = useState<FormFields>({
     name: '',
     email: '',
@@ -152,7 +154,7 @@ export default function ContactPage() {
                   ¿Buscas una respuesta inmediata? Conversa directamente con nuestro equipo de soporte técnico en tiempo real.
                 </p>
                 <a 
-                  href="https://wa.me/51999999999?text=Hola,%20tengo%20una%20pregunta%20sobre%20izicode" 
+                  href={`https://wa.me/${limits.whatsappNumber}?text=Hola,%20tengo%20una%20pregunta%20sobre%20izicode`} 
                   target="_blank" 
                   rel="noopener noreferrer" 
                   className={styles.actionLink}

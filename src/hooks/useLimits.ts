@@ -11,12 +11,14 @@ export interface SaasLimits {
   guest: PlanLimits;
   free: Required<PlanLimits>;
   pro: Required<PlanLimits>;
+  whatsappNumber: string;
 }
 
 export const DEFAULT_LIMITS: SaasLimits = {
   guest: { maxCodesPerBatch: 3 },
   free: { maxCodesPerBatch: 30, maxBatches: 5 },
-  pro: { maxCodesPerBatch: 1000, maxBatches: 20 }
+  pro: { maxCodesPerBatch: 1000, maxBatches: 20 },
+  whatsappNumber: '51999999999'
 };
 
 export function useLimits() {
@@ -40,7 +42,8 @@ export function useLimits() {
           pro: {
             maxCodesPerBatch: data.pro?.maxCodesPerBatch ?? DEFAULT_LIMITS.pro.maxCodesPerBatch,
             maxBatches: data.pro?.maxBatches ?? DEFAULT_LIMITS.pro.maxBatches
-          }
+          },
+          whatsappNumber: data.whatsappNumber ?? DEFAULT_LIMITS.whatsappNumber
         });
       }
       setLoading(false);

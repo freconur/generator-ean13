@@ -78,6 +78,10 @@ const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockUseLimits = useLimits as jest.MockedFunction<typeof useLimits>;
 const mockUpdateDoc = updateDoc as unknown as jest.Mock;
 
+beforeAll(() => {
+  window.HTMLElement.prototype.scrollIntoView = jest.fn();
+});
+
 describe('Pruebas de Límites SaaS en BarcodeForm', () => {
   const defaultProps = {
     barcodes: [],
@@ -108,7 +112,8 @@ describe('Pruebas de Límites SaaS en BarcodeForm', () => {
       limits: {
         guest: { maxCodesPerBatch: 3, maxBatches: 1 },
         free: { maxCodesPerBatch: 30, maxBatches: 5 },
-        pro: { maxCodesPerBatch: 1000, maxBatches: 20 }
+        pro: { maxCodesPerBatch: 1000, maxBatches: 20 },
+        whatsappNumber: '51999999999'
       },
       loading: false
     });
@@ -422,6 +427,117 @@ describe('Pruebas de Límites SaaS en BarcodeForm', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
 
       expect(mockUpdateDoc).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Smart Accordion and Responsive Mobile Card rendering', () => {
+    it('debe expandir la lista por defecto y colapsar/expandir al hacer clic en el botón del acordeón', () => {
+      mockUseAuth.mockReturnValue({
+        user: null,
+        profile: null,
+        setIsAuthModalOpen: jest.fn(),
+        loading: false
+      } as any);
+
+      const barcodes = [
+        { id: 'item_1', code: '7501031301829', quantity: 1, isValid: true, hasDescription: false, hasPrice: false, print: true }
+      ];
+
+      render(
+        <BarcodeForm 
+          {...defaultProps as any} 
+          barcodes={barcodes} 
+          setBarcodes={jest.fn()}
+        />
+      );
+
+      // Verificamos que el botón del acordeón existe
+      const toggleBtn = screen.getByTitle('Colapsar lista');
+      expect(toggleBtn).toBeInTheDocument();
+
+      // Al hacer clic, se debe colapsar y el título del botón cambia a "Expandir lista"
+      fireEvent.click(toggleBtn);
+      expect(screen.getByTitle('Expandir lista')).toBeInTheDocument();
+
+      // Al hacer clic de nuevo, se debe expandir y volver a "Colapsar lista"
+      fireEvent.click(screen.getByTitle('Expandir lista'));
+      expect(screen.getByTitle('Colapsar lista')).toBeInTheDocument();
+    });
+
+    it('debe forzar la expansión de la lista automáticamente al recibir un escaneo exitoso', async () => {
+      mockUseAuth.mockReturnValue({
+        user: null,
+        profile: null,
+        setIsAuthModalOpen: jest.fn(),
+        loading: false
+      } as any);
+
+      const barcodes = [
+        { id: 'item_1', code: '7501031301829', quantity: 1, isValid: true, hasDescription: false, hasPrice: false, print: false }
+      ];
+
+      render(
+        <BarcodeForm 
+          {...defaultProps as any} 
+          barcodes={barcodes} 
+          setBarcodes={jest.fn()}
+        />
+      );
+
+      // Colapsamos la lista primero
+      const toggleBtn = screen.getByTitle('Colapsar lista');
+      fireEvent.click(toggleBtn);
+      expect(screen.getByTitle('Expandir lista')).toBeInTheDocument();
+
+      // Abrimos el lector y simulamos un escaneo exitoso
+      const scanTriggerBtn = screen.getByTitle('Escanear Código por Cámara');
+      fireEvent.click(scanTriggerBtn);
+
+      const scanBtn = screen.getByText('Simular Escaneo Válido');
+      fireEvent.click(scanBtn);
+
+      // El acordeón debe haberse forzado a expandirse de nuevo
+      expect(screen.getByTitle('Colapsar lista')).toBeInTheDocument();
+    });
+
+    it('debe alternar la expansión de los detalles de la fila al hacer clic en la flecha', () => {
+      mockUseAuth.mockReturnValue({
+        user: null,
+        profile: null,
+        setIsAuthModalOpen: jest.fn(),
+        loading: false
+      } as any);
+
+      const barcodes = [
+        { id: 'item_1', code: '7501031301829', quantity: 1, isValid: true, hasDescription: false, hasPrice: false, print: true }
+      ];
+
+      render(
+        <BarcodeForm 
+          {...defaultProps as any} 
+          barcodes={barcodes} 
+          setBarcodes={jest.fn()}
+        />
+      );
+
+      // El panel de detalles NO debe estar presente inicialmente
+      expect(screen.queryByTitle('Eliminar código')).not.toBeInTheDocument();
+
+      // Buscamos el botón de la flecha ("Ver detalles")
+      const arrowBtn = screen.getByTitle('Ver detalles');
+      expect(arrowBtn).toBeInTheDocument();
+
+      // Hacemos clic para expandir
+      fireEvent.click(arrowBtn);
+
+      // Ahora el panel de detalles (que contiene el botón Eliminar con título "Eliminar código") debe estar en el DOM
+      expect(screen.getByTitle('Eliminar código')).toBeInTheDocument();
+
+      // Hacemos clic de nuevo para colapsar
+      fireEvent.click(arrowBtn);
+
+      // El panel de detalles ya no debe estar
+      expect(screen.queryByTitle('Eliminar código')).not.toBeInTheDocument();
     });
   });
 });

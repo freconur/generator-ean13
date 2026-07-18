@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import AuthModal from '@/components/AuthModal';
 import styles from '@/styles/Docs.module.css';
+import { useLimits } from '@/hooks/useLimits';
 
 interface SidebarItem {
   id: string;
@@ -17,6 +18,7 @@ interface FaqItem {
 }
 
 export default function DocsPage() {
+  const { limits } = useLimits();
   const [activeSection, setActiveSection] = useState<string>('conceptos-basicos');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   
@@ -436,7 +438,7 @@ export default function DocsPage() {
                     Nuestro equipo técnico de soporte oficial en español está listo para ayudarte con la configuración de tus impresoras térmicas, integración de bases de datos o licenciamiento GS1.
                   </p>
                   <a 
-                    href="https://wa.me/51999999999?text=Hola,%20tengo%20una%20pregunta%20sobre%20izicode%20y%20su%20guia%20de%20impresion" 
+                    href={`https://wa.me/${limits.whatsappNumber}?text=Hola,%20tengo%20una%20pregunta%20sobre%20izicode%20y%20su%20guia%20de%20impresion`} 
                     target="_blank" 
                     rel="noopener noreferrer" 
                     className={styles.helpCtaButton}

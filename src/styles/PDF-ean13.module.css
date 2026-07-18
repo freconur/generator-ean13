@@ -495,7 +495,26 @@
   width: 100%;
   aspect-ratio: 210 / 297;
 }
+/* Controles para el Bottom Sheet en Móviles */
+.floatingSettingsBtn {
+  display: none;
+}
 
+.bottomSheetOverlay {
+  display: none;
+}
+
+.bottomSheetDragHandle {
+  display: none;
+}
+
+.closeBottomSheetBtn {
+  display: none;
+}
+
+.settingsContainerOpen {
+  /* Placeholder for CSS modules */
+}
 
 /* Responsive */
 @media (max-width: 768px) {
@@ -504,7 +523,146 @@
   }
 
   .settingsContainer {
-    padding: 1rem;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    width: 100%;
+    max-height: 65vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding: 1.5rem;
+    box-sizing: border-box;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.1), 0 -8px 10px -6px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-bottom: none;
+    margin-bottom: 0;
+    animation: none;
+  }
+
+  .settingsContainerOpen {
+    transform: translateY(0);
+  }
+
+  :global(.dark-theme) .settingsContainer {
+    background: rgba(30, 41, 59, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .floatingSettingsBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    z-index: 999;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: var(--primary-color, #4f46e5);
+    color: white;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s ease, background-color 0.2s ease;
+  }
+
+  .floatingSettingsBtn:hover {
+    transform: scale(1.05);
+  }
+
+  .floatingSettingsBtn:active {
+    transform: scale(0.95);
+  }
+
+  .bottomSheetOverlay {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .bottomSheetOverlayVisible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .bottomSheetDragHandle {
+    display: block;
+    width: 40px;
+    height: 4px;
+    background: #cbd5e1;
+    border-radius: 9999px;
+    margin: -0.5rem auto 1.25rem auto;
+  }
+
+  :global(.dark-theme) .bottomSheetDragHandle {
+    background: #475569;
+  }
+
+  .closeBottomSheetBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    font-size: 24px;
+    font-weight: 300;
+    line-height: 1;
+    color: #64748b;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .closeBottomSheetBtn:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+  }
+
+  :global(.dark-theme) .closeBottomSheetBtn {
+    color: #94a3b8;
+  }
+
+  :global(.dark-theme) .closeBottomSheetBtn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #f8fafc;
+  }
+
+  /* Ajuste de lectura óptima en el bottom sheet */
+  .settingGroup label, 
+  .settingGroup span,
+  .sliderHeader label,
+  .sliderHeader span {
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
+  }
+
+  :global(.dark-theme) .settingGroup label, 
+  :global(.dark-theme) .settingGroup span,
+  :global(.dark-theme) .sliderHeader label,
+  :global(.dark-theme) .sliderHeader span {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
   }
 
   .settingGroup {

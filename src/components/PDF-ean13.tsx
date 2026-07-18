@@ -406,6 +406,7 @@ export const PdfImprimir: React.FC<Props> = ({
 	const [previewError, setPreviewError] = useState<string>('');
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [mounted, setMounted] = useState(false);
+	const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
 
 
 	useEffect(() => {
@@ -614,7 +615,44 @@ export const PdfImprimir: React.FC<Props> = ({
 
 	return (
 		<div className={styles.container}>
-			<div className={styles.settingsContainer}>
+			{/* Overlay oscuro semi-translúcido para el Bottom Sheet en móviles */}
+			<div
+				className={`${styles.bottomSheetOverlay} ${isBottomSheetOpen ? styles.bottomSheetOverlayVisible : ''}`}
+				onClick={() => setIsBottomSheetOpen(false)}
+			/>
+
+			{/* Botón flotante de ajustes visible solo en móviles */}
+			<button
+				type="button"
+				className={styles.floatingSettingsBtn}
+				onClick={() => setIsBottomSheetOpen(prev => !prev)}
+				aria-label="Ajustes de código de barras"
+			>
+				<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+					<line x1="4" y1="21" x2="4" y2="14" />
+					<line x1="4" y1="10" x2="4" y2="3" />
+					<line x1="12" y1="21" x2="12" y2="12" />
+					<line x1="12" y1="8" x2="12" y2="3" />
+					<line x1="20" y1="21" x2="20" y2="16" />
+					<line x1="20" y1="12" x2="20" y2="3" />
+					<line x1="1" y1="14" x2="7" y2="14" />
+					<line x1="9" y1="8" x2="15" y2="8" />
+					<line x1="17" y1="16" x2="23" y2="16" />
+				</svg>
+			</button>
+
+			<div className={`${styles.settingsContainer} ${isBottomSheetOpen ? styles.settingsContainerOpen : ''}`}>
+				{/* Tirador táctil y botón de cerrar para móviles */}
+				<div className={styles.bottomSheetDragHandle} />
+				<button
+					type="button"
+					className={styles.closeBottomSheetBtn}
+					onClick={() => setIsBottomSheetOpen(false)}
+					aria-label="Cerrar ajustes"
+				>
+					×
+				</button>
+
 				<h1>Ajustes del codigo de barra</h1>
 
 				<div className={styles.buttonGroup} style={{ marginTop: 0, marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', width: '100%' }}>
