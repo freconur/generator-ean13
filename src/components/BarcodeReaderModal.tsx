@@ -18,6 +18,8 @@ export default function BarcodeReaderModal({ isOpen, onClose, onScanSuccess }: B
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [focusRing, setFocusRing] = useState({ x: 0, y: 0, active: false });
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const qrCodeReaderRef = useRef<Html5Qrcode | null>(null);
   const containerId = 'reader-container';
@@ -105,6 +107,9 @@ export default function BarcodeReaderModal({ isOpen, onClose, onScanSuccess }: B
             .catch((err) => console.error('Error al detener la cámara en cleanup:', err));
         }
       }
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
     };
   }, [isOpen]);
 
@@ -160,6 +165,40 @@ export default function BarcodeReaderModal({ isOpen, onClose, onScanSuccess }: B
     }
   };
 
+  const handleViewportClick = async (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setFocusRing({ x, y, active: true });
+
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+    }
+    focusTimeoutRef.current = setTimeout(() => {
+      setFocusRing((prev) => ({ ...prev, active: false }));
+    }, 800);
+
+    try {
+      const video = e.currentTarget.querySelector('video');
+      if (video && video.srcObject && video.srcObject instanceof MediaStream) {
+        const track = video.srcObject.getVideoTracks()[0];
+        if (track && typeof track.getCapabilities === 'function' && typeof track.applyConstraints === 'function') {
+          const capabilities = track.getCapabilities() as any;
+          if (capabilities.focusMode) {
+            if (capabilities.focusMode.includes('single-shot')) {
+              await track.applyConstraints({ focusMode: 'single-shot' } as any);
+            } else if (capabilities.focusMode.includes('continuous')) {
+              await track.applyConstraints({ focusMode: 'continuous' } as any);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Manejar posibles fallos silenciosamente
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -194,9 +233,18 @@ export default function BarcodeReaderModal({ isOpen, onClose, onScanSuccess }: B
         )}
 
         {/* Visor de Escaneo */}
-        <div className={styles.scannerViewport}>
+        <div className={styles.scannerViewport} onClick={handleViewportClick} data-testid="scanner-viewport">
           <div id={containerId} className={styles.readerElement} />
           
+          {/* Aro de enfoque (Focus Ring) */}
+          {focusRing.active && (
+            <div
+              className={`${styles.focusRing} ${styles.focusRingActive}`}
+              style={{ left: focusRing.x, top: focusRing.y }}
+              data-testid="focus-ring"
+            />
+          )}
+
           {/* Overlay de guía para centrar el código de barras */}
           {!errorMessage && !isInitializing && (
             <div className={styles.scannerOverlay}>
