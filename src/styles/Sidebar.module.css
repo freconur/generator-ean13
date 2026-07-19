@@ -806,3 +806,7 @@
     display: flex !important;
   }
 }
+
+:global(.bottom-sheet-open) .mobileToggle {
+  display: none !important;
+}

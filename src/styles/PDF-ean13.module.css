@@ -675,14 +675,17 @@
     min-width: auto;
   }
 
-  .buttonGroup {
-    flex-direction: column;
-    gap: 1rem;
+  .settingsContainer h1 {
+    font-size: 1.25rem;
+    font-weight: 750;
+    text-align: center;
+    margin-top: 0.25rem;
+    margin-bottom: 0.75rem;
   }
 
-  .previewButton,
-  .downloadButton {
-    width: 100%;
+  .buttonGroup {
+    flex-direction: row;
+    gap: 0.75rem;
   }
 
   .pdfPreviewSection {

@@ -426,7 +426,8 @@ describe('Pruebas de Límites SaaS en BarcodeForm', () => {
 
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect(mockUpdateDoc).toHaveBeenCalledTimes(2);
+      // No debe sincronizar en caliente tras el cambio en los checkboxes según los nuevos requerimientos
+      expect(mockUpdateDoc).toHaveBeenCalledTimes(0);
     });
   });
 

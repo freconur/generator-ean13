@@ -85,7 +85,8 @@ describe('Pruebas de Bottom Sheet en PdfImprimir', () => {
     expect(settingsPanel).not.toHaveClass('settingsContainerOpen');
 
     // Volver a abrir
-    fireEvent.click(floatingBtn);
+    const floatingBtnAgain = screen.getByLabelText('Ajustes de código de barras');
+    fireEvent.click(floatingBtnAgain);
     expect(settingsPanel).toHaveClass('settingsContainerOpen');
 
     // Clic en el overlay para cerrar (el overlay es el elemento con aria-label o clase bottomSheetOverlay)

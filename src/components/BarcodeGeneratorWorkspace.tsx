@@ -7,6 +7,7 @@ import { getCurrencyCode, getCurrencySymbol, getLocalizationDebugInfo } from '..
 import CurrencyConfigModal from './CurrencyConfigModal';
 import CreateBatchModal from './CreateBatchModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
+import UnsavedChangesModal from './UnsavedChangesModal';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
 import { useLimits } from '../hooks/useLimits';
@@ -102,6 +103,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [batchToDeleteId, setBatchToDeleteId] = useState<string>('');
   const [batchToDeleteName, setBatchToDeleteName] = useState<string>('');
+  const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState<boolean>(false);
+  const [pendingAction, setPendingAction] = useState<{ type: 'select' | 'create' | 'route'; payload?: any } | null>(null);
   const bypassWarningRef = useRef<boolean>(false);
 
   const maxCodesAllowed = !user 
@@ -176,7 +179,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     containerHeight: 60,
     textMargin: 2,
     descAlign: 'center',
-    descFontSize: 10
+    descFontSize: 6
   });
 
   // Obtener la moneda actual (manual o automática)
@@ -336,10 +339,10 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
       }
       const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty) || isSavingBatch;
       if (hasUnsaved) {
-        if (!window.confirm(warningText)) {
-          router.events.emit('routeChangeError');
-          throw 'routeChange aborted';
-        }
+        router.events.emit('routeChangeError');
+        setPendingAction({ type: 'route', payload: url });
+        setIsUnsavedModalOpen(true);
+        throw 'routeChange aborted';
       }
     };
 
@@ -352,18 +355,11 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     };
   }, [loadedBatchId, barcodes.length, isDirty, isSavingBatch, router]);
 
-  // Manejar selección de lote desde la barra lateral (tipo playlist)
-  const handleSelectBatch = async (selectedBatch: any) => {
+  // Ejecutar selección de lote real
+  const executeSelectBatch = async (selectedBatch: any) => {
     if (!user) return;
-    
-    // Advertir si hay cambios sin guardar en un lote nuevo o modificaciones sin guardar en un lote existente
-    const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty);
-    if (hasUnsaved) {
-      const confirmLeave = window.confirm("Tienes cambios sin guardar. Si cambias de lote, perderás estos cambios. ¿Deseas continuar?");
-      if (!confirmLeave) return;
-    }
-
     try {
+      setIsLoadingBatch(true);
       let loadedCodes: BarcodeItem[] = [];
       if (selectedBatch.barcodes && Array.isArray(selectedBatch.barcodes)) {
         loadedCodes = selectedBatch.barcodes;
@@ -398,18 +394,28 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     } catch (error) {
       console.error("Error al seleccionar lote:", error);
       alert("No se pudieron cargar los productos de este lote.");
+    } finally {
+      setIsLoadingBatch(false);
     }
   };
 
-  // Crear una nueva lista de códigos y limpiar estados
-  const handleCreateNewBatch = () => {
+  // Manejar selección de lote desde la barra lateral (tipo playlist)
+  const handleSelectBatch = async (selectedBatch: any) => {
+    if (!user) return;
+    
     // Advertir si hay cambios sin guardar en un lote nuevo o modificaciones sin guardar en un lote existente
     const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty);
     if (hasUnsaved) {
-      const confirmLeave = window.confirm("Tienes cambios sin guardar. Si creas uno nuevo, perderás estos cambios. ¿Deseas continuar?");
-      if (!confirmLeave) return;
+      setPendingAction({ type: 'select', payload: selectedBatch });
+      setIsUnsavedModalOpen(true);
+      return;
     }
 
+    await executeSelectBatch(selectedBatch);
+  };
+
+  // Ejecutar creación real de lote vacío
+  const executeCreateNewBatch = () => {
     setBarcodes([]);
     setEnableDescription(false);
     setEnablePrice(false);
@@ -421,6 +427,19 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     if (router.query.batch) {
       router.push(isDashboard ? '/dashboard' : '/', undefined, { shallow: true });
     }
+  };
+
+  // Crear una nueva lista de códigos y limpiar estados
+  const handleCreateNewBatch = () => {
+    // Advertir si hay cambios sin guardar en un lote nuevo o modificaciones sin guardar en un lote existente
+    const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty);
+    if (hasUnsaved) {
+      setPendingAction({ type: 'create' });
+      setIsUnsavedModalOpen(true);
+      return;
+    }
+
+    executeCreateNewBatch();
   };
 
   const handleRenameBatch = async () => {
@@ -521,6 +540,16 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
       } else {
         alert(`¡Lote "${batchName}" guardado como nuevo en la nube!`);
       }
+
+      // Ejecutar acción pendiente si existe
+      if (pendingAction) {
+        if (pendingAction.type === 'select') {
+          await executeSelectBatch(pendingAction.payload);
+        } else if (pendingAction.type === 'create') {
+          executeCreateNewBatch();
+        }
+        setPendingAction(null);
+      }
     } catch (error) {
       console.error('Error al guardar el lote:', error);
       alert('Hubo un error al guardar el lote. Por favor verifica tu conexión.');
@@ -561,6 +590,44 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
       alert("Hubo un error al eliminar el lote.");
     } finally {
       setIsSavingBatch(false);
+    }
+  };
+
+  // Salir descartando cambios (descartar y continuar)
+  const handleDiscardChanges = () => {
+    setIsUnsavedModalOpen(false);
+    if (pendingAction) {
+      if (pendingAction.type === 'select') {
+        executeSelectBatch(pendingAction.payload);
+      } else if (pendingAction.type === 'create') {
+        executeCreateNewBatch();
+      } else if (pendingAction.type === 'route') {
+        bypassWarningRef.current = true;
+        router.push(pendingAction.payload);
+      }
+      setPendingAction(null);
+    }
+  };
+
+  // Guardar y salir
+  const handleSaveAndLeave = async () => {
+    if (loadedBatchId) {
+      // Lote existente: guardar/sobreescribir directamente
+      try {
+        setIsSavingBatch(true);
+        await handleSaveBatch(loadedBatchName || '', true);
+        setIsUnsavedModalOpen(false);
+      } catch (err) {
+        console.error(err);
+        alert('Hubo un error al guardar los cambios.');
+      } finally {
+        setIsSavingBatch(false);
+      }
+    } else {
+      // Lote nuevo: requiere nombre. Abrir CreateBatchModal de guardado.
+      setIsUnsavedModalOpen(false);
+      setSaveDefaultName(`Lote del ${new Date().toLocaleDateString('es-PE')}`);
+      setIsSaveModalOpen(true);
     }
   };
 
@@ -822,6 +889,14 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={executeDeleteBatch}
         batchName={batchToDeleteName}
+      />
+
+      <UnsavedChangesModal
+        isOpen={isUnsavedModalOpen}
+        onClose={() => setIsUnsavedModalOpen(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveAndLeave}
+        isSaving={isSavingBatch}
       />
     </div>
   );
