@@ -6,6 +6,7 @@ import BarcodeForm from './BarcodeForm';
 import { getCurrencyCode, getCurrencySymbol, getLocalizationDebugInfo } from '../utils/formatPrice';
 import CurrencyConfigModal from './CurrencyConfigModal';
 import CreateBatchModal from './CreateBatchModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
 import { useLimits } from '../hooks/useLimits';
@@ -98,6 +99,9 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   const [isLoadingBatch, setIsLoadingBatch] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
+  const [batchToDeleteId, setBatchToDeleteId] = useState<string>('');
+  const [batchToDeleteName, setBatchToDeleteName] = useState<string>('');
   const bypassWarningRef = useRef<boolean>(false);
 
   const maxCodesAllowed = !user 
@@ -529,24 +533,34 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   };
 
   // Eliminar lote directamente desde el Workspace
-  const handleDeleteBatch = async (e: React.MouseEvent, batchId: string, batchName: string) => {
+  const handleDeleteBatch = (e: React.MouseEvent, batchId: string, batchName: string) => {
     e.stopPropagation(); // Evitar seleccionar el lote al borrar
     if (!user) return;
-    const confirmDelete = window.confirm(`¿Estás seguro de que deseas eliminar el lote "${batchName}"? Esta acción no se puede deshacer.`);
-    if (!confirmDelete) return;
+    setBatchToDeleteId(batchId);
+    setBatchToDeleteName(batchName);
+    setIsDeleteModalOpen(true);
+  };
+
+  // Ejecutar la eliminación real
+  const executeDeleteBatch = async () => {
+    if (!user || !batchToDeleteId) return;
 
     try {
-      // 1. Borrar todos los documentos de la subcolección 'items'
-      await deleteItemsSubcollection(user.uid, batchId);
+      setIsSavingBatch(true);
+      // 1. Borrar todos los documentos de la subcolección 'items' (soporte legacy)
+      await deleteItemsSubcollection(user.uid, batchToDeleteId);
 
       // 2. Borrar el documento principal del lote
-      await deleteDoc(doc(db, 'users', user.uid, 'batches', batchId));
-      if (loadedBatchId === batchId) {
+      await deleteDoc(doc(db, 'users', user.uid, 'batches', batchToDeleteId));
+      if (loadedBatchId === batchToDeleteId) {
         handleCreateNewBatch();
       }
+      setIsDeleteModalOpen(false);
     } catch (error) {
       console.error("Error deleting batch:", error);
       alert("Hubo un error al eliminar el lote.");
+    } finally {
+      setIsSavingBatch(false);
     }
   };
 
@@ -620,28 +634,44 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
                 autoFocus
               />
             ) : (
-              <h2 
-                className={styles.workspaceTitle} 
-                onClick={() => {
-                  if (loadedBatchId && !isReadOnly) {
-                    setTempBatchName(loadedBatchName || '');
-                    setIsEditingName(true);
-                  }
-                }}
-                style={loadedBatchId && !isReadOnly ? { cursor: 'pointer' } : { cursor: 'default' }}
-                title={loadedBatchId && !isReadOnly ? "Haga clic para renombrar el lote" : undefined}
-              >
-                <svg className={styles.inlineIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-                {loadedBatchName ? loadedBatchName : 'Tu Espacio de Trabajo Premium'}
-                {loadedBatchId && !isReadOnly && (
-                  <svg className={styles.editIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 
+                  className={styles.workspaceTitle} 
+                  onClick={() => {
+                    if (loadedBatchId && !isReadOnly) {
+                      setTempBatchName(loadedBatchName || '');
+                      setIsEditingName(true);
+                    }
+                  }}
+                  style={loadedBatchId && !isReadOnly ? { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' } : { cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  title={loadedBatchId && !isReadOnly ? "Haga clic para renombrar el lote" : undefined}
+                >
+                  <svg className={styles.inlineIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
+                  {loadedBatchName ? loadedBatchName : 'Tu Espacio de Trabajo Premium'}
+                  {loadedBatchId && !isReadOnly && (
+                    <svg className={styles.editIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  )}
+                </h2>
+                {loadedBatchId && (
+                  <button
+                    onClick={(e) => handleDeleteBatch(e, loadedBatchId, loadedBatchName || '')}
+                    className={styles.headerDeleteBtn}
+                    title="Eliminar este lote permanentemente"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      <line x1="10" y1="11" x2="10" y2="17" />
+                      <line x1="14" y1="11" x2="14" y2="17" />
+                    </svg>
+                  </button>
                 )}
-              </h2>
+              </div>
             )}
             <div className={styles.headerRightActions}>
               <div 
@@ -786,6 +816,13 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
           <p>Cargando Lote...</p>
         </div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={executeDeleteBatch}
+        batchName={batchToDeleteName}
+      />
     </div>
   );
 }

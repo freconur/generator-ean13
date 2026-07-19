@@ -1872,6 +1872,81 @@
   color: #ffffff;
 }
 
+.modalCancelBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background-color: var(--background-secondary, #f1f5f9);
+  color: var(--text-secondary, #475569);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-pill, 9999px);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.modalCancelBtn:hover {
+  background-color: var(--hover-bg, rgba(0, 0, 0, 0.04));
+  transform: translateY(-1px);
+}
+
+.modalCancelBtn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.modalConfirmBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background-color: var(--primary-color, #4f46e5);
+  color: white;
+  border: none;
+  border-radius: var(--radius-pill, 9999px);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--primary-shadow);
+  transition: all 0.2s ease;
+}
+
+.modalConfirmBtn:hover:not(:disabled) {
+  background-color: var(--primary-hover, #4338ca);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--primary-shadow);
+}
+
+.modalConfirmBtn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+}
+
+.modalConfirmBtn:disabled {
+  background-color: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+:global(.dark-theme) .modalCancelBtn {
+  background-color: #334155;
+  color: #f1f5f9;
+  border-color: #475569;
+}
+
+:global(.dark-theme) .modalCancelBtn:hover {
+  background-color: #475569;
+}
+
+:global(.dark-theme) .modalConfirmBtn:disabled {
+  background-color: #334155;
+  color: #64748b;
+}
+
 .searchBox {
   position: relative;
   display: flex;

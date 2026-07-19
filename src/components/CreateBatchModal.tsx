@@ -78,15 +78,14 @@ export default function CreateBatchModal({ isOpen, onClose, onCreate, defaultNam
             <button
               type="button"
               onClick={onClose}
-              className={styles.saveAsNewBtn}
-              style={{ background: '#f1f5f9', color: '#475569', boxShadow: 'none', border: '1px solid #cbd5e1' }}
+              className={styles.modalCancelBtn}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isSubmitting || !batchName.trim()}
-              className={styles.saveChangesBtn}
+              className={styles.modalConfirmBtn}
             >
               {isSubmitting ? 'Creando...' : 'Crear Lote'}
             </button>

@@ -110,8 +110,7 @@ export default function DeleteConfirmModal({ isOpen, onClose, onConfirm, batchNa
               type="button"
               onClick={onClose}
               disabled={isDeleting}
-              className={styles.saveAsNewBtn}
-              style={{ background: 'var(--hover-bg, rgba(0, 0, 0, 0.03))', color: 'var(--text-secondary)', boxShadow: 'none', border: '1px solid var(--border-color)' }}
+              className={styles.modalCancelBtn}
             >
               Cancelar
             </button>
@@ -119,16 +118,12 @@ export default function DeleteConfirmModal({ isOpen, onClose, onConfirm, batchNa
               type="button"
               onClick={handleConfirm}
               disabled={isDeleting || !isConfirmed}
-              className={styles.saveChangesBtn}
+              className={styles.modalConfirmBtn}
               style={{ 
                 background: isConfirmed ? '#ef4444' : '#cbd5e1', 
                 color: isConfirmed ? '#ffffff' : '#94a3b8', 
                 boxShadow: isConfirmed ? '0 4px 10px rgba(239, 68, 68, 0.25)' : 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: isConfirmed && !isDeleting ? 'pointer' : 'not-allowed',
-                transition: 'all 0.2s ease'
+                cursor: isConfirmed && !isDeleting ? 'pointer' : 'not-allowed'
               }}
             >
               {isDeleting ? (
