@@ -120,6 +120,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isLoadingBatch, setIsLoadingBatch] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
   const bypassWarningRef = useRef<boolean>(false);
 
   const maxCodesAllowed = !user 
@@ -326,13 +327,14 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     }
   }, [barcodes.length, setShowPDFPreview]);
 
-  // Advertir al usuario antes de salir/recargar la página si hay códigos sin guardar
+  // Advertir al usuario antes de salir/recargar la página si hay códigos sin guardar o cambios sin guardar
   useEffect(() => {
     const warningText = "Tienes cambios sin guardar. ¿Estás seguro de que deseas salir?";
 
     const handleWindowClose = (e: BeforeUnloadEvent) => {
       if (bypassWarningRef.current) return;
-      if ((!loadedBatchId && barcodes.length > 0) || isSavingBatch) {
+      const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty) || isSavingBatch;
+      if (hasUnsaved) {
         e.preventDefault();
         e.returnValue = warningText;
         return warningText;
@@ -345,7 +347,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         bypassWarningRef.current = false;
         return;
       }
-      if ((!loadedBatchId && barcodes.length > 0) || isSavingBatch) {
+      const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty) || isSavingBatch;
+      if (hasUnsaved) {
         if (!window.confirm(warningText)) {
           router.events.emit('routeChangeError');
           throw 'routeChange aborted';
@@ -360,15 +363,16 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
       window.removeEventListener('beforeunload', handleWindowClose);
       router.events.off('routeChangeStart', handleBrowseAway);
     };
-  }, [loadedBatchId, barcodes.length, isSavingBatch, router]);
+  }, [loadedBatchId, barcodes.length, isDirty, isSavingBatch, router]);
 
   // Manejar selección de lote desde la barra lateral (tipo playlist)
   const handleSelectBatch = async (selectedBatch: any) => {
     if (!user) return;
     
-    // Advertir si hay cambios sin guardar en un lote nuevo
-    if (!loadedBatchId && barcodes.length > 0) {
-      const confirmLeave = window.confirm("Tienes un lote nuevo con códigos sin guardar. Si cambias de lote, perderás estos códigos. ¿Deseas continuar?");
+    // Advertir si hay cambios sin guardar en un lote nuevo o modificaciones sin guardar en un lote existente
+    const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty);
+    if (hasUnsaved) {
+      const confirmLeave = window.confirm("Tienes cambios sin guardar. Si cambias de lote, perderás estos cambios. ¿Deseas continuar?");
       if (!confirmLeave) return;
     }
 
@@ -396,6 +400,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
       }
       setLoadedBatchId(selectedBatch.id);
       setLoadedBatchName(selectedBatch.name);
+      setIsDirty(false);
     } catch (error) {
       console.error("Error al seleccionar lote:", error);
       alert("No se pudieron cargar los productos de este lote.");
@@ -404,9 +409,10 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
 
   // Crear una nueva lista de códigos y limpiar estados
   const handleCreateNewBatch = () => {
-    // Advertir si hay cambios sin guardar en un lote nuevo
-    if (!loadedBatchId && barcodes.length > 0) {
-      const confirmLeave = window.confirm("Tienes un lote nuevo con códigos sin guardar. Si creas uno nuevo, perderás estos códigos. ¿Deseas continuar?");
+    // Advertir si hay cambios sin guardar en un lote nuevo o modificaciones sin guardar en un lote existente
+    const hasUnsaved = (!loadedBatchId && barcodes.length > 0) || (loadedBatchId && isDirty);
+    if (hasUnsaved) {
+      const confirmLeave = window.confirm("Tienes cambios sin guardar. Si creas uno nuevo, perderás estos cambios. ¿Deseas continuar?");
       if (!confirmLeave) return;
     }
 
@@ -417,6 +423,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     setManualCurrencyCode('');
     setLoadedBatchId(null);
     setLoadedBatchName(null);
+    setIsDirty(false);
     if (router.query.batch) {
       router.push(isDashboard ? '/dashboard' : '/', undefined, { shallow: true });
     }
@@ -508,6 +515,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         const savedBarcodes = await saveItemsSubcollection(user.uid, targetBatchId, barcodes);
         setBarcodes(savedBarcodes);
       }
+
+      setIsDirty(false);
 
       if (overwrite && loadedBatchId) {
         alert(`¡Lote "${batchName}" actualizado con éxito!`);
@@ -780,6 +789,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
           onOpenCurrencyModal={() => setShowCurrencyModal(true)}
           isBatchExceeded={isBatchExceeded}
           userBatchesCount={userBatches.length}
+          isDirty={isDirty}
+          setIsDirty={setIsDirty}
         />
 
         {/* Workspace de dos columnas inferior (PDF a la izquierda y Ajustes a la derecha) */}

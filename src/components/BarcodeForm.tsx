@@ -122,6 +122,8 @@ interface BarcodeFormProps {
   onOpenCurrencyModal?: () => void;
   isBatchExceeded?: boolean;
   userBatchesCount?: number;
+  isDirty?: boolean;
+  setIsDirty?: (dirty: boolean) => void;
 }
 
 export default function BarcodeForm({
@@ -143,7 +145,9 @@ export default function BarcodeForm({
   isDashboard,
   onOpenCurrencyModal,
   isBatchExceeded = false,
-  userBatchesCount = 0
+  userBatchesCount = 0,
+  isDirty,
+  setIsDirty
 }: BarcodeFormProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -186,6 +190,9 @@ export default function BarcodeForm({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showGs1RedirectModal, setShowGs1RedirectModal] = useState<boolean>(false);
   const [editingDescIndex, setEditingDescIndex] = useState<number | null>(null);
+  const [tempDescValue, setTempDescValue] = useState<string>('');
+  const [editingPriceIndex, setEditingPriceIndex] = useState<number | null>(null);
+  const [tempPriceValue, setTempPriceValue] = useState<string>('');
   const [isReaderOpen, setIsReaderOpen] = useState<boolean>(false);
   const [isOptionsDropdownOpen, setIsOptionsDropdownOpen] = useState<boolean>(false);
   const optionsDropdownRef = useRef<HTMLDivElement>(null);
@@ -1219,7 +1226,7 @@ export default function BarcodeForm({
                       setBarcodes(prev => prev.map((barcode, i) => 
                         i === pendingEditCodeIndex ? { ...barcode, hasDescription: checked } : barcode
                       ));
-                      handleInlineUpdateField(pendingEditCodeIndex, { hasDescription: checked });
+                      if (setIsDirty) setIsDirty(true);
                     }}
                     className={styles.tableCheckbox}
                     style={{ margin: '0' }}
@@ -1235,7 +1242,7 @@ export default function BarcodeForm({
                       setBarcodes(prev => prev.map((barcode, i) => 
                         i === pendingEditCodeIndex ? { ...barcode, hasPrice: checked } : barcode
                       ));
-                      handleInlineUpdateField(pendingEditCodeIndex, { hasPrice: checked });
+                      if (setIsDirty) setIsDirty(true);
                     }}
                     className={styles.tableCheckbox}
                     style={{ margin: '0' }}
@@ -1554,21 +1561,11 @@ export default function BarcodeForm({
                             el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
                           }
                         }}
-                        onChange={async (e) => {
+                        onChange={(e) => {
                           if (isReadOnly) return;
                           const checked = e.target.checked;
                           setBarcodes(prev => prev.map(item => ({ ...item, print: checked })));
-                          
-                          // Sincronizar todos a Firestore en caliente si aplica
-                          if (user && loadedBatchId) {
-                            const promises = barcodes.map(async (item) => {
-                              if (item.id) {
-                                const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-                                await updateDoc(itemDocRef, { print: checked });
-                              }
-                            });
-                            await Promise.all(promises);
-                          }
+                          if (setIsDirty) setIsDirty(true);
                         }}
                         disabled={isReadOnly}
                         className={styles.tableCheckbox}
@@ -1590,20 +1587,11 @@ export default function BarcodeForm({
                               el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
                             }
                           }}
-                          onChange={async (e) => {
+                          onChange={(e) => {
                             if (isReadOnly) return;
                             const checked = e.target.checked;
                             setBarcodes(prev => prev.map(item => ({ ...item, hasDescription: checked })));
-                            
-                            if (user && loadedBatchId) {
-                              const promises = barcodes.map(async (item) => {
-                                if (item.id) {
-                                  const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-                                  await updateDoc(itemDocRef, { hasDescription: checked });
-                                }
-                              });
-                              await Promise.all(promises);
-                            }
+                            if (setIsDirty) setIsDirty(true);
                           }}
                           disabled={isReadOnly}
                           className={styles.tableCheckbox}
@@ -1633,20 +1621,11 @@ export default function BarcodeForm({
                               el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
                             }
                           }}
-                          onChange={async (e) => {
+                          onChange={(e) => {
                             if (isReadOnly) return;
                             const checked = e.target.checked;
                             setBarcodes(prev => prev.map(item => ({ ...item, hasPrice: checked })));
-                            
-                            if (user && loadedBatchId) {
-                              const promises = barcodes.map(async (item) => {
-                                if (item.id) {
-                                  const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-                                  await updateDoc(itemDocRef, { hasPrice: checked });
-                                }
-                              });
-                              await Promise.all(promises);
-                            }
+                            if (setIsDirty) setIsDirty(true);
                           }}
                           disabled={isReadOnly}
                           className={styles.tableCheckbox}
@@ -1703,7 +1682,7 @@ export default function BarcodeForm({
                                   setBarcodes(prev => prev.map((barcode, i) => 
                                     i === index ? { ...barcode, print: checked } : barcode
                                   ));
-                                  handleInlineUpdateField(index, { print: checked });
+                                  if (setIsDirty) setIsDirty(true);
                                 }}
                                 className={styles.tableCheckbox}
                                 title="Incluir este código en el PDF"
@@ -1724,7 +1703,7 @@ export default function BarcodeForm({
                                     setBarcodes(prev => prev.map((barcode, i) => 
                                       i === index ? { ...barcode, hasDescription: checked } : barcode
                                     ));
-                                    handleInlineUpdateField(index, { hasDescription: checked });
+                                    if (setIsDirty) setIsDirty(true);
                                   }}
                                   className={styles.tableCheckbox}
                                   title="Imprimir descripción en PDF"
@@ -1734,15 +1713,13 @@ export default function BarcodeForm({
                                   <input
                                     ref={editingInputRef}
                                     type="text"
-                                    value={item.description || ''}
+                                    value={tempDescValue}
                                     onChange={(e) => {
                                       const val = e.target.value;
                                       if (val.length > 200) {
                                         alert("La descripción no puede superar los 200 caracteres.");
                                       }
-                                      setBarcodes(prev => prev.map((barcode, i) => 
-                                        i === index ? { ...barcode, description: val.slice(0, 200) } : barcode
-                                      ));
+                                      setTempDescValue(val.slice(0, 200));
                                     }}
                                     className={styles.descriptionInput}
                                     placeholder="Descripción"
@@ -1763,7 +1740,12 @@ export default function BarcodeForm({
                                 ) : (
                                   <div
                                     className={styles.descriptionText}
-                                    onClick={() => !isReadOnly && setEditingDescIndex(index)}
+                                    onClick={() => {
+                                      if (!isReadOnly) {
+                                        setEditingDescIndex(index);
+                                        setTempDescValue(item.description || '');
+                                      }
+                                    }}
                                     style={isReadOnly ? { cursor: 'not-allowed' } : {}}
                                   >
                                     {item.description ? (
@@ -1786,7 +1768,7 @@ export default function BarcodeForm({
                                     setBarcodes(prev => prev.map((barcode, i) => 
                                       i === index ? { ...barcode, hasPrice: checked } : barcode
                                     ));
-                                    handleInlineUpdateField(index, { hasPrice: checked });
+                                    if (setIsDirty) setIsDirty(true);
                                   }}
                                   className={styles.tableCheckbox}
                                   title="Imprimir precio en PDF"
@@ -1794,19 +1776,15 @@ export default function BarcodeForm({
                                 />
                                 <input
                                   type="number"
-                                  value={item.price || ''}
+                                  value={editingPriceIndex === index ? tempPriceValue : (item.price !== undefined && item.price !== 0 ? String(item.price) : '')}
+                                  onFocus={() => {
+                                    if (isReadOnly) return;
+                                    setEditingPriceIndex(index);
+                                    setTempPriceValue(item.price !== undefined && item.price !== 0 ? String(item.price) : '');
+                                  }}
                                   onChange={(e) => {
                                     if (isReadOnly) return;
-                                    const val = parseFloat(e.target.value) || 0;
-                                    if (val < 0) {
-                                      alert("El precio no puede ser negativo.");
-                                    }
-                                    if (val > 999999) {
-                                      alert("El precio máximo permitido es $999,999.");
-                                    }
-                                    setBarcodes(prev => prev.map((barcode, i) => 
-                                      i === index ? { ...barcode, price: Math.max(0, Math.min(val, 999999)) } : barcode
-                                    ));
+                                    setTempPriceValue(e.target.value);
                                   }}
                                   className={styles.priceInput}
                                   placeholder="0.00"
@@ -1816,8 +1794,19 @@ export default function BarcodeForm({
                                   onBlur={(e) => {
                                     if (isReadOnly) return;
                                     const val = parseFloat(e.target.value) || 0;
+                                    if (val < 0) {
+                                      alert("El precio no puede ser negativo.");
+                                    }
+                                    if (val > 999999) {
+                                      alert("El precio máximo permitido es $999,999.");
+                                    }
                                     const finalPrice = Math.max(0, Math.min(val, 999999));
+                                    
+                                    setBarcodes(prev => prev.map((barcode, i) => 
+                                      i === index ? { ...barcode, price: finalPrice } : barcode
+                                    ));
                                     handleInlineUpdateField(index, { price: finalPrice });
+                                    setEditingPriceIndex(null);
                                   }}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -1879,7 +1868,7 @@ export default function BarcodeForm({
                                           setBarcodes(prev => prev.map((barcode, i) => 
                                             i === index ? { ...barcode, hasDescription: checked } : barcode
                                           ));
-                                          handleInlineUpdateField(index, { hasDescription: checked });
+                                          if (setIsDirty) setIsDirty(true);
                                         }}
                                         className={styles.tableCheckbox}
                                         disabled={isReadOnly}
@@ -1890,15 +1879,13 @@ export default function BarcodeForm({
                                       <input
                                         ref={editingInputRef}
                                         type="text"
-                                        value={item.description || ''}
+                                        value={tempDescValue}
                                         onChange={(e) => {
                                           const val = e.target.value;
                                           if (val.length > 200) {
                                             alert("La descripción no puede superar los 200 caracteres.");
                                           }
-                                          setBarcodes(prev => prev.map((barcode, i) => 
-                                            i === index ? { ...barcode, description: val.slice(0, 200) } : barcode
-                                          ));
+                                          setTempDescValue(val.slice(0, 200));
                                         }}
                                         className={styles.descriptionInput}
                                         style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px' }}
@@ -1921,7 +1908,12 @@ export default function BarcodeForm({
                                       <div
                                         className={styles.descriptionText}
                                         style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px', cursor: isReadOnly ? 'not-allowed' : 'pointer' }}
-                                        onClick={() => !isReadOnly && setEditingDescIndex(index)}
+                                        onClick={() => {
+                                          if (!isReadOnly) {
+                                            setEditingDescIndex(index);
+                                            setTempDescValue(item.description || '');
+                                          }
+                                        }}
                                       >
                                         {item.description || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Añadir descripción...</span>}
                                       </div>
@@ -1939,7 +1931,7 @@ export default function BarcodeForm({
                                           setBarcodes(prev => prev.map((barcode, i) => 
                                             i === index ? { ...barcode, hasPrice: checked } : barcode
                                           ));
-                                          handleInlineUpdateField(index, { hasPrice: checked });
+                                          if (setIsDirty) setIsDirty(true);
                                         }}
                                         className={styles.tableCheckbox}
                                         disabled={isReadOnly}
@@ -1948,19 +1940,15 @@ export default function BarcodeForm({
                                     </label>
                                     <input
                                       type="number"
-                                      value={item.price || ''}
+                                      value={editingPriceIndex === index ? tempPriceValue : (item.price !== undefined && item.price !== 0 ? String(item.price) : '')}
+                                      onFocus={() => {
+                                        if (isReadOnly) return;
+                                        setEditingPriceIndex(index);
+                                        setTempPriceValue(item.price !== undefined && item.price !== 0 ? String(item.price) : '');
+                                      }}
                                       onChange={(e) => {
                                         if (isReadOnly) return;
-                                        const val = parseFloat(e.target.value) || 0;
-                                        if (val < 0) {
-                                          alert("El precio no puede ser negativo.");
-                                        }
-                                        if (val > 999999) {
-                                          alert("El precio máximo permitido es $999,999.");
-                                        }
-                                        setBarcodes(prev => prev.map((barcode, i) => 
-                                          i === index ? { ...barcode, price: Math.max(0, Math.min(val, 999999)) } : barcode
-                                        ));
+                                        setTempPriceValue(e.target.value);
                                       }}
                                       className={styles.priceInput}
                                       style={{ border: '1px solid var(--border-color)', background: 'var(--background-secondary, #fff)', padding: '6px 8px', borderRadius: '6px', textAlign: 'left' }}
@@ -1971,8 +1959,19 @@ export default function BarcodeForm({
                                       onBlur={(e) => {
                                         if (isReadOnly) return;
                                         const val = parseFloat(e.target.value) || 0;
+                                        if (val < 0) {
+                                          alert("El precio no puede ser negativo.");
+                                        }
+                                        if (val > 999999) {
+                                          alert("El precio máximo permitido es $999,999.");
+                                        }
                                         const finalPrice = Math.max(0, Math.min(val, 999999));
+                                        
+                                        setBarcodes(prev => prev.map((barcode, i) => 
+                                          i === index ? { ...barcode, price: finalPrice } : barcode
+                                        ));
                                         handleInlineUpdateField(index, { price: finalPrice });
+                                        setEditingPriceIndex(null);
                                       }}
                                       onKeyDown={(e) => {
                                         if (e.key === 'Enter') {

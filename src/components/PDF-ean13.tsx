@@ -408,6 +408,40 @@ export const PdfImprimir: React.FC<Props> = ({
 	const [mounted, setMounted] = useState(false);
 	const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
 
+	// Estados debounced para evitar regenerar el PDF en cada pulsación de tecla o cambio de slider
+	const [debouncedBarcodes, setDebouncedBarcodes] = useState(barcodes);
+	const [debouncedBarcodeSettings, setDebouncedBarcodeSettings] = useState(barcodeSettings);
+	const [debouncedEnableDescription, setDebouncedEnableDescription] = useState(enableDescription);
+	const [debouncedEnablePrice, setDebouncedEnablePrice] = useState(enablePrice);
+
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setDebouncedBarcodes(barcodes);
+		}, 600);
+		return () => clearTimeout(timer);
+	}, [barcodes]);
+
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setDebouncedBarcodeSettings(barcodeSettings);
+		}, 600);
+		return () => clearTimeout(timer);
+	}, [barcodeSettings]);
+
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setDebouncedEnableDescription(enableDescription);
+		}, 600);
+		return () => clearTimeout(timer);
+	}, [enableDescription]);
+
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setDebouncedEnablePrice(enablePrice);
+		}, 600);
+		return () => clearTimeout(timer);
+	}, [enablePrice]);
+
 
 	useEffect(() => {
 		setMounted(true);
@@ -827,22 +861,22 @@ export const PdfImprimir: React.FC<Props> = ({
 			</div>
 
 			{/* Vista previa del PDF en tiempo real (Portal) */}
-			{mounted && showPDFPreview && barcodes.length > 0 && Object.keys(barcodeImages).length > 0 ? (
+			{mounted && showPDFPreview && debouncedBarcodes.length > 0 && Object.keys(barcodeImages).length > 0 ? (
 				createPortal(
 					<div className={styles.pdfPreviewSection}>
 
 						<div className={styles.pdfViewerContainer} style={{ height: '100%' }}>
 							<BlobProvider
-								key={`${barcodes.map(b => `${b.code}-${b.quantity}-${b.description || ''}-${b.price || 0}-${b.hasDescription}-${b.hasPrice}`).join('_')}_${JSON.stringify(barcodeSettings)}`}
+								key={`${debouncedBarcodes.map(b => `${b.code}-${b.quantity}-${b.description || ''}-${b.price || 0}-${b.hasDescription}-${b.hasPrice}`).join('_')}_${JSON.stringify(debouncedBarcodeSettings)}`}
 								document={
 									<MyDocument
-										barcodes={barcodes.map(barcode => ({
+										barcodes={debouncedBarcodes.map(barcode => ({
 											...barcode,
 											imageBase64: barcodeImages[barcode.code] || ''
 										}))}
-										settings={barcodeSettings}
-										enableDescription={enableDescription}
-										enablePrice={enablePrice}
+										settings={debouncedBarcodeSettings}
+										enableDescription={debouncedEnableDescription}
+										enablePrice={debouncedEnablePrice}
 										customCurrency={customCurrency}
 									/>
 								}
