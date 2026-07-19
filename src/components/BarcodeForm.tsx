@@ -376,13 +376,28 @@ export default function BarcodeForm({
       finalUpdates.description = sanitizeInput(String(finalUpdates.description || '')).toLowerCase();
     }
 
-    if (user && loadedBatchId && item.id) {
+    const updatedBarcodes = barcodes.map((b, i) => i === index ? { ...b, ...finalUpdates } : b);
+    setBarcodes(updatedBarcodes);
+
+    if (user && loadedBatchId) {
       try {
-        const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-        await updateDoc(itemDocRef, finalUpdates);
-        console.log('✅ Ítem actualizado en Firestore:', finalUpdates);
+        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        await updateDoc(batchDocRef, {
+          barcodes: updatedBarcodes.map(b => ({
+            code: b.code,
+            quantity: b.quantity,
+            isValid: !!b.isValid,
+            description: String(b.description || '').toLowerCase().trim(),
+            price: b.price || 0,
+            hasDescription: !!b.hasDescription,
+            hasPrice: !!b.hasPrice,
+            print: b.print !== false
+          })),
+          updatedAt: serverTimestamp()
+        });
+        console.log('✅ Lote actualizado en Firestore:', finalUpdates);
       } catch (error) {
-        console.error('Error al actualizar ítem en Firestore:', error);
+        console.error('Error al actualizar lote en Firestore:', error);
       }
     }
   };
@@ -446,49 +461,35 @@ export default function BarcodeForm({
   const addCode = async (code: string, quantity: number, description: string = '', price: number = 0) => {
     const formattedDesc = enableDescription ? sanitizeInput(String(description || '')).toLowerCase() : '';
     
-    let newItemId: string | undefined;
+    const newBarcode = {
+      code,
+      quantity,
+      isValid: true,
+      description: formattedDesc,
+      price: enablePrice ? price : 0,
+      hasDescription: enableDescription,
+      hasPrice: enablePrice,
+      print: true
+    };
+
     if (user && loadedBatchId) {
       try {
-        const itemColRef = collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items');
-        const newItemDoc = doc(itemColRef);
-        newItemId = newItemDoc.id;
-        const itemData = {
-          code,
-          quantity,
-          isValid: true,
-          description: formattedDesc,
-          price: enablePrice ? price : 0,
-          hasDescription: enableDescription,
-          hasPrice: enablePrice,
-          orderIndex: barcodes.length,
-          print: true
-        };
-        await setDoc(newItemDoc, itemData);
-        
-        // Actualizar totalCount y updatedAt del lote en Firestore
         const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        const updatedBarcodes = [...barcodes, newBarcode];
         await updateDoc(batchDocRef, {
-          totalCount: barcodes.length + 1,
+          barcodes: updatedBarcodes,
+          totalCount: updatedBarcodes.length,
           updatedAt: serverTimestamp()
         });
-        
-        console.log('✅ Nuevo ítem guardado en Firestore:', newItemId);
+        console.log('✅ Nuevo ítem guardado en Firestore');
       } catch (err) {
         console.error('Error al guardar nuevo ítem en Firestore:', err);
       }
     }
 
     setBarcodes(prev => [...prev, { 
-      id: newItemId,
-      code, 
-      quantity, 
-      isValid: true,
-      isDuplicate: false,
-      description: formattedDesc,
-      price: enablePrice ? price : 0,
-      hasDescription: enableDescription,
-      hasPrice: enablePrice,
-      print: true
+      ...newBarcode,
+      isDuplicate: false
     }]);
     setIsListExpanded(true);
     setInputCode('');
@@ -708,21 +709,7 @@ export default function BarcodeForm({
    */
   const handleModalConfirm = async () => {
     if (pendingCode) {
-      const existingItem = barcodes.find(item => item.code === pendingCode.code);
-      if (existingItem) {
-        const newQuantity = existingItem.quantity + pendingCode.quantity;
-        if (user && loadedBatchId && existingItem.id) {
-          try {
-            const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', existingItem.id);
-            await updateDoc(itemDocRef, { quantity: newQuantity });
-            console.log('✅ Cantidad duplicada actualizada en Firestore:', existingItem.id);
-          } catch (err) {
-            console.error('Error al actualizar cantidad duplicada en Firestore:', err);
-          }
-        }
-      }
-
-      setBarcodes(prev => prev.map(item => {
+      const updatedBarcodes = barcodes.map(item => {
         if (item.code === pendingCode.code) {
           return {
             ...item,
@@ -730,7 +717,31 @@ export default function BarcodeForm({
           };
         }
         return item;
-      }));
+      });
+
+      if (user && loadedBatchId) {
+        try {
+          const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+          await updateDoc(batchDocRef, {
+            barcodes: updatedBarcodes.map(b => ({
+              code: b.code,
+              quantity: b.quantity,
+              isValid: !!b.isValid,
+              description: String(b.description || '').toLowerCase().trim(),
+              price: b.price || 0,
+              hasDescription: !!b.hasDescription,
+              hasPrice: !!b.hasPrice,
+              print: b.print !== false
+            })),
+            updatedAt: serverTimestamp()
+          });
+          console.log('✅ Cantidad duplicada actualizada en Firestore');
+        } catch (err) {
+          console.error('Error al actualizar cantidad duplicada en Firestore:', err);
+        }
+      }
+
+      setBarcodes(updatedBarcodes);
       setShowModal(false);
       setPendingCode(null);
       
@@ -765,33 +776,37 @@ export default function BarcodeForm({
   };
 
   const handleRemoveCode = async (index: number) => {
-    const item = barcodes[index];
-    if (user && loadedBatchId && item && item.id) {
+    const updatedBarcodes = barcodes.filter((_, i) => i !== index);
+    const codes = updatedBarcodes.map(item => item.code);
+    const mapped = updatedBarcodes.map(item => ({
+      ...item,
+      isDuplicate: codes.filter(code => code === item.code).length > 1
+    }));
+
+    if (user && loadedBatchId) {
       try {
-        const itemDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId, 'items', item.id);
-        await deleteDoc(itemDocRef);
-        
-        // Actualizar totalCount y updatedAt del lote en Firestore
         const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
         await updateDoc(batchDocRef, {
-          totalCount: Math.max(0, barcodes.length - 1),
+          barcodes: mapped.map(b => ({
+            code: b.code,
+            quantity: b.quantity,
+            isValid: !!b.isValid,
+            description: String(b.description || '').toLowerCase().trim(),
+            price: b.price || 0,
+            hasDescription: !!b.hasDescription,
+            hasPrice: !!b.hasPrice,
+            print: b.print !== false
+          })),
+          totalCount: mapped.length,
           updatedAt: serverTimestamp()
         });
-        
-        console.log('✅ Ítem eliminado de Firestore:', item.id);
+        console.log('✅ Ítem eliminado de Firestore');
       } catch (error) {
         console.error('Error al eliminar ítem de Firestore:', error);
       }
     }
 
-    setBarcodes(prev => {
-      const newBarcodes = prev.filter((_, i) => i !== index);
-      const codes = newBarcodes.map(item => item.code);
-      return newBarcodes.map(item => ({
-        ...item,
-        isDuplicate: codes.filter(code => code === item.code).length > 1
-      }));
-    });
+    setBarcodes(mapped);
   };
 
   return (

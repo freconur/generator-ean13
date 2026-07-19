@@ -42,44 +42,21 @@ export const deleteItemsSubcollection = async (userId: string, batchId: string) 
   }
 };
 
-// Helper asíncrono para guardar todos los items en la subcolección usando writeBatch
+// Helper asíncrono para guardar todos los items en el documento del lote
 export const saveItemsSubcollection = async (userId: string, batchId: string, barcodes: BarcodeItem[]): Promise<BarcodeItem[]> => {
-  await deleteItemsSubcollection(userId, batchId);
-
-  if (barcodes.length === 0) return [];
-
-  const savedBarcodes = [...barcodes];
-
-  for (let i = 0; i < barcodes.length; i += 500) {
-    const chunk = barcodes.slice(i, i + 500);
-    const writeB = writeBatch(db);
-    chunk.forEach((item, idx) => {
-      const orderIndex = i + idx;
-      const itemDocRef = doc(collection(db, 'users', userId, 'batches', batchId, 'items'));
-      
-      const itemData = {
-        code: item.code,
-        quantity: item.quantity,
-        isValid: !!item.isValid,
-        description: String(item.description || '').toLowerCase().trim(),
-        price: item.price || 0,
-        hasDescription: !!item.hasDescription,
-        hasPrice: !!item.hasPrice,
-        orderIndex: orderIndex,
-        print: item.print !== false
-      };
-      
-      writeB.set(itemDocRef, itemData);
-      savedBarcodes[orderIndex] = {
-        ...item,
-        id: itemDocRef.id,
-        description: String(item.description || '').toLowerCase().trim(),
-        print: item.print !== false
-      };
-    });
-    await writeB.commit();
-  }
-  return savedBarcodes;
+  const batchDocRef = doc(db, 'users', userId, 'batches', batchId);
+  const cleanedBarcodes = barcodes.map(item => ({
+    code: item.code,
+    quantity: item.quantity,
+    isValid: !!item.isValid,
+    description: String(item.description || '').toLowerCase().trim(),
+    price: item.price || 0,
+    hasDescription: !!item.hasDescription,
+    hasPrice: !!item.hasPrice,
+    print: item.print !== false
+  }));
+  await updateDoc(batchDocRef, { barcodes: cleanedBarcodes });
+  return cleanedBarcodes;
 };
 
 export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isDashboard?: boolean }) {
@@ -285,9 +262,15 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
               const itemsSnap = await getDocs(q);
               const loadedCodes: BarcodeItem[] = [];
               itemsSnap.forEach((itemDoc) => {
-                loadedCodes.push({ id: itemDoc.id, ...itemDoc.data() as BarcodeItem });
+                loadedCodes.push({ ...itemDoc.data() as BarcodeItem });
               });
               setBarcodes(loadedCodes);
+
+              // Migración automática al array barcodes en el doc padre
+              if (loadedCodes.length > 0) {
+                await updateDoc(batchDocRef, { barcodes: loadedCodes });
+                deleteItemsSubcollection(user.uid, batch as string).catch(console.error);
+              }
             }
 
             if (data.enableDescription !== undefined) {
@@ -378,15 +361,22 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
 
     try {
       let loadedCodes: BarcodeItem[] = [];
-      if (selectedBatch.barcodes && selectedBatch.barcodes.length > 0) {
+      if (selectedBatch.barcodes && Array.isArray(selectedBatch.barcodes)) {
         loadedCodes = selectedBatch.barcodes;
       } else {
         const itemsColRef = collection(db, 'users', user.uid, 'batches', selectedBatch.id, 'items');
         const q = query(itemsColRef, orderBy('orderIndex', 'asc'));
         const itemsSnap = await getDocs(q);
         itemsSnap.forEach((itemDoc) => {
-          loadedCodes.push({ id: itemDoc.id, ...itemDoc.data() as BarcodeItem });
+          loadedCodes.push({ ...itemDoc.data() as BarcodeItem });
         });
+
+        // Migración automática al array barcodes en el doc padre
+        if (loadedCodes.length > 0) {
+          const batchDocRef = doc(db, 'users', user.uid, 'batches', selectedBatch.id);
+          await updateDoc(batchDocRef, { barcodes: loadedCodes });
+          deleteItemsSubcollection(user.uid, selectedBatch.id).catch(console.error);
+        }
       }
       setBarcodes(loadedCodes);
       setEnableDescription(selectedBatch.enableDescription || false);
@@ -477,7 +467,17 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         enableDescription,
         enablePrice,
         customCurrency: useManualCurrency ? getCurrentCurrency() : null,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        barcodes: barcodes.map(b => ({
+          code: b.code,
+          quantity: b.quantity,
+          isValid: !!b.isValid,
+          description: String(b.description || '').toLowerCase().trim(),
+          price: b.price || 0,
+          hasDescription: !!b.hasDescription,
+          hasPrice: !!b.hasPrice,
+          print: b.print !== false
+        }))
       };
 
       let targetBatchId = loadedBatchId;
@@ -508,12 +508,6 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         // Redireccionar al nuevo lote en el dashboard (evitando advertencia de salida)
         bypassWarningRef.current = true;
         router.push(`/dashboard?batch=${targetBatchId}`, undefined, { shallow: true });
-      }
-
-      // Guardar los items correspondientes en la subcolección
-      if (targetBatchId) {
-        const savedBarcodes = await saveItemsSubcollection(user.uid, targetBatchId, barcodes);
-        setBarcodes(savedBarcodes);
       }
 
       setIsDirty(false);
@@ -564,72 +558,44 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     if (hasAnyDescription) setEnableDescription(true);
     if (hasAnyPrice) setEnablePrice(true);
 
-    let savedItems: BarcodeItem[] = [];
+    const formattedImported = importedItems.map(item => ({
+      code: item.code,
+      quantity: item.quantity || 1,
+      isValid: item.isValid !== false,
+      description: String(item.description || '').toLowerCase().trim(),
+      price: item.price || 0,
+      hasDescription: hasAnyDescription || !!item.hasDescription,
+      hasPrice: hasAnyPrice || !!item.hasPrice,
+      print: item.print !== false
+    }));
 
     if (user && loadedBatchId) {
       try {
-        const itemsColRef = collection(db, 'users', user.uid, 'batches', loadedBatchId, 'items');
-        const newItemsWithIds: BarcodeItem[] = [];
-        let currentOrderIndex = barcodes.length;
-        
-        for (let i = 0; i < importedItems.length; i += 500) {
-          const chunk = importedItems.slice(i, i + 500);
-          const writeB = writeBatch(db);
-          
-          chunk.forEach((item, idx) => {
-            const newItemDocRef = doc(itemsColRef);
-            const orderIndex = currentOrderIndex + i + idx;
-            
-            const itemData = {
-              code: item.code,
-              quantity: item.quantity || 1,
-              isValid: item.isValid !== false,
-              description: String(item.description || '').toLowerCase().trim(),
-              price: item.price || 0,
-              hasDescription: hasAnyDescription || !!item.hasDescription,
-              hasPrice: hasAnyPrice || !!item.hasPrice,
-              orderIndex: orderIndex,
-              print: item.print !== false
-            };
-            
-            writeB.set(newItemDocRef, itemData);
-            
-            newItemsWithIds.push({
-              ...item,
-              id: newItemDocRef.id,
-              description: String(item.description || '').toLowerCase().trim(),
-              print: item.print !== false
-            });
-          });
-          
-          await writeB.commit();
-        }
-        
-        // Actualizar el totalCount en el documento del lote
         const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        const updatedBarcodes = [...barcodes, ...formattedImported];
         await updateDoc(batchDocRef, {
-          totalCount: barcodes.length + importedItems.length,
+          barcodes: updatedBarcodes,
+          totalCount: updatedBarcodes.length,
           updatedAt: serverTimestamp()
         });
-        
-        savedItems = newItemsWithIds;
         console.log('✅ Ítems importados guardados en Firestore.');
       } catch (error) {
         console.error('Error al guardar ítems importados en Firestore:', error);
         alert('Hubo un error al guardar los ítems importados en la nube.');
       }
-    } else {
-      savedItems = importedItems;
     }
 
     setBarcodes(prev => {
       const existingCodes = new Set(prev.map(item => item.code));
-      const newItems = savedItems.map(item => ({
+      const newItems = formattedImported.map(item => ({
         ...item,
-        description: item.description ? String(item.description).toLowerCase().trim() : '',
-        isDuplicate: existingCodes.has(item.code) || item.isDuplicate
+        isDuplicate: existingCodes.has(item.code)
       }));
-      return [...prev, ...newItems];
+      const codes = [...prev, ...newItems].map(item => item.code);
+      return [...prev, ...newItems].map(item => ({
+        ...item,
+        isDuplicate: codes.filter(code => code === item.code).length > 1
+      }));
     });
   };
 
