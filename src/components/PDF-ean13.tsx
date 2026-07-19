@@ -666,11 +666,11 @@ export const PdfImprimir: React.FC<Props> = ({
 				onClick={() => setIsBottomSheetOpen(false)}
 			/>
 
-			{/* Botón flotante de ajustes visible solo en móviles */}
 			{!isBottomSheetOpen && (
 				<button
 					type="button"
 					className={styles.floatingSettingsBtn}
+					id="floating-settings-btn"
 					onClick={() => setIsBottomSheetOpen(prev => !prev)}
 					aria-label="Ajustes de código de barras"
 				>
@@ -688,7 +688,7 @@ export const PdfImprimir: React.FC<Props> = ({
 				</button>
 			)}
 
-			<div className={`${styles.settingsContainer} ${isBottomSheetOpen ? styles.settingsContainerOpen : ''}`}>
+			<div className={`${styles.settingsContainer} ${isBottomSheetOpen ? styles.settingsContainerOpen : ''}`} id="pdf-settings-panel">
 				{/* Tirador táctil y botón de cerrar para móviles */}
 				<div className={styles.bottomSheetDragHandle} />
 				<button

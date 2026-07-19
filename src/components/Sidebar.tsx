@@ -165,6 +165,7 @@ export default function Sidebar() {
       {/* Botón flotante para móvil (Hamburguesa) */}
       <button 
         className={styles.mobileToggle} 
+        id="mobile-menu-btn"
         onClick={() => setIsMobileOpen(!isMobileOpen)}
         aria-label={isMobileOpen ? "Cerrar menú" : "Abrir menú"}
       >
@@ -284,7 +285,7 @@ export default function Sidebar() {
 
         {/* Sección de Playlists/Lotes (Spotify-like) */}
         {!isCollapsed ? (
-          <div className={styles.playlistSection}>
+          <div className={styles.playlistSection} id="sidebar-batch-list">
             <div className={styles.playlistHeader}>
               <h4>Mis Lotes (Playlists)</h4>
               <button 

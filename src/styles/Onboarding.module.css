@@ -1,0 +1,199 @@
+.onboardingOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  pointer-events: none; /* Dejar pasar eventos a menos que sea en los botones del tooltip */
+}
+
+.fullOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+
+.spotlight {
+  position: fixed;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.7);
+  z-index: 10001;
+  pointer-events: auto;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 2px solid var(--primary-color, #4f46e5);
+}
+
+.tooltipCard {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 16px 20px;
+  width: 320px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  pointer-events: auto; /* Permitir clicks dentro del tooltip */
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+:global(.dark-theme) .tooltipCard {
+  background: #1e293b;
+  border-color: #334155;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+:global(.dark-theme) .title {
+  color: #f8fafc;
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeBtn:hover {
+  color: #ef4444;
+}
+
+.cardBody {
+  margin-bottom: 16px;
+}
+
+.description {
+  font-size: 0.825rem;
+  line-height: 1.5;
+  color: #475569;
+  margin: 0;
+}
+
+:global(.dark-theme) .description {
+  color: #94a3b8;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+}
+
+:global(.dark-theme) .cardFooter {
+  border-color: #334155;
+}
+
+.skipBtn {
+  background: transparent;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.skipBtn:hover {
+  color: #94a3b8;
+  background: var(--background-secondary, #f1f5f9);
+}
+
+:global(.dark-theme) .skipBtn:hover {
+  background: #334155;
+}
+
+.navigation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progressText {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #94a3b8;
+  user-select: none;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.prevBtn {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+:global(.dark-theme) .prevBtn {
+  border-color: #475569;
+  color: #f1f5f9;
+}
+
+.prevBtn:hover {
+  background: #f1f5f9;
+}
+
+:global(.dark-theme) .prevBtn:hover {
+  background: #334155;
+}
+
+.nextBtn {
+  background: var(--primary-color, #4f46e5);
+  color: #ffffff;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px var(--primary-shadow);
+}
+
+.nextBtn:hover {
+  background: var(--primary-hover, #4338ca);
+}
+
+@media (max-width: 768px) {
+  .tooltipCard {
+    width: auto;
+    position: fixed;
+    bottom: 24px;
+    left: 12px;
+    right: 12px;
+  }
+}

@@ -8,6 +8,7 @@ import CurrencyConfigModal from './CurrencyConfigModal';
 import CreateBatchModal from './CreateBatchModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import UnsavedChangesModal from './UnsavedChangesModal';
+import Onboarding from './Onboarding';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
 import { useLimits } from '../hooks/useLimits';
@@ -105,6 +106,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   const [batchToDeleteName, setBatchToDeleteName] = useState<string>('');
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState<boolean>(false);
   const [pendingAction, setPendingAction] = useState<{ type: 'select' | 'create' | 'route'; payload?: any } | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const bypassWarningRef = useRef<boolean>(false);
 
   const maxCodesAllowed = !user 
@@ -132,6 +134,19 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
       };
+    }
+  }, []);
+
+  // Disparar Onboarding automáticamente si es la primera vez
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const completed = localStorage.getItem('izicode_onboarding_completed');
+      if (!completed) {
+        const timer = setTimeout(() => {
+          setShowOnboarding(true);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
     }
   }, []);
 
@@ -701,7 +716,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
                 autoFocus
               />
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div id="workspace-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h2 
                   className={styles.workspaceTitle} 
                   onClick={() => {
@@ -854,6 +869,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
           userBatchesCount={userBatches.length}
           isDirty={isDirty}
           setIsDirty={setIsDirty}
+          onStartOnboarding={() => setShowOnboarding(true)}
         />
 
         {/* Workspace de dos columnas inferior (PDF a la izquierda y Ajustes a la derecha) */}
@@ -897,6 +913,11 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         onDiscard={handleDiscardChanges}
         onSave={handleSaveAndLeave}
         isSaving={isSavingBatch}
+      />
+
+      <Onboarding
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
       />
     </div>
   );
