@@ -5,6 +5,9 @@ import styles from '../styles/Home.module.css';
 import ExcelImportModal from './ExcelImportModal';
 import BarcodeReaderModal from './BarcodeReaderModal';
 import { validateEAN13 } from '../utils/ean13Generator';
+import { BARCODE_FORMATS } from './CreateBatchModal';
+import { validateBarcode, getPlaceholderForFormat, filterInputForFormat, getErrorMessageForFormat, generateSampleBarcodes } from '../utils/barcodeValidators';
+import CustomSelect from './CustomSelect';
 import { formatPrice } from '../utils/formatPrice';
 import { useAuth } from '../context/AuthContext';
 import { useLimits } from '../hooks/useLimits';
@@ -113,6 +116,8 @@ interface BarcodeFormProps {
   setShowPDFPreview: React.Dispatch<React.SetStateAction<boolean>>;
   customCurrency?: string;
   barcodeSettings: BarcodeSettings;
+  barcodeFormat: string;
+  setBarcodeFormat: React.Dispatch<React.SetStateAction<string>>;
   onImportCSV: (items: BarcodeItem[]) => void;
   loadedBatchId?: string | null;
   loadedBatchName?: string | null;
@@ -138,6 +143,8 @@ export default function BarcodeForm({
   setShowPDFPreview,
   customCurrency,
   barcodeSettings,
+  barcodeFormat,
+  setBarcodeFormat,
   onImportCSV,
   loadedBatchId,
   loadedBatchName,
@@ -198,6 +205,11 @@ export default function BarcodeForm({
   const [isReaderOpen, setIsReaderOpen] = useState<boolean>(false);
   const [isOptionsDropdownOpen, setIsOptionsDropdownOpen] = useState<boolean>(false);
   const optionsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Estados para Borrado Masivo y Selección
+  const [selectedDeleteIndices, setSelectedDeleteIndices] = useState<number[]>([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
+  const [deleteValidationInput, setDeleteValidationInput] = useState<string>('');
 
   // Estados para el Escáner Inteligente (Asistente de Impresión y Selección)
   const [flashingIndex, setFlashingIndex] = useState<number | null>(null);
@@ -261,12 +273,15 @@ export default function BarcodeForm({
    * Maneja los cambios en el campo de entrada
    */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 13);
+    const value = filterInputForFormat(e.target.value, barcodeFormat);
     setInputCode(value);
     setError('');
     setIsValid(null);
 
-    if (value.length === 13 && descriptionInputRef.current) {
+    const isFixedLength = barcodeFormat === 'EAN13' || barcodeFormat === 'EAN8' || barcodeFormat === 'UPC';
+    const targetLength = barcodeFormat === 'EAN13' ? 13 : (barcodeFormat === 'EAN8' ? 8 : (barcodeFormat === 'UPC' ? 12 : 0));
+
+    if (isFixedLength && value.length === targetLength && descriptionInputRef.current) {
       descriptionInputRef.current.focus();
     }
   };
@@ -501,6 +516,74 @@ export default function BarcodeForm({
     setTempQuantity('1');
   };
 
+  /**
+   * Genera 5 códigos de ejemplo automáticos del formato activo
+   */
+  const handleGenerateSampleCodes = async () => {
+    const maxCodes = !user 
+      ? limits.guest.maxCodesPerBatch 
+      : (isPro ? limits.pro.maxCodesPerBatch : limits.free.maxCodesPerBatch);
+
+    const countToGenerate = Math.min(5, maxCodes - barcodes.length);
+
+    if (countToGenerate <= 0) {
+      alert(`Has alcanzado el límite máximo de ${maxCodes} códigos permitidos por tu plan.`);
+      return;
+    }
+
+    const samples = generateSampleBarcodes(barcodeFormat, countToGenerate);
+    
+    setEnableDescription(true);
+    setEnablePrice(true);
+
+    for (const sample of samples) {
+      await addCode(sample.code, 1, sample.description, sample.price);
+    }
+  };
+
+  /**
+   * Elimina en lote los ítems seleccionados previa confirmación y validación
+   */
+  const handleConfirmBulkDelete = async () => {
+    if (deleteValidationInput.trim().toUpperCase() !== 'ELIMINAR') return;
+
+    const remainingBarcodes = barcodes.filter((_, index) => !selectedDeleteIndices.includes(index));
+    const codes = remainingBarcodes.map(item => item.code);
+    const mapped = remainingBarcodes.map(item => ({
+      ...item,
+      isDuplicate: codes.filter(code => code === item.code).length > 1
+    }));
+
+    if (user && loadedBatchId) {
+      try {
+        const batchDocRef = doc(db, 'users', user.uid, 'batches', loadedBatchId);
+        await updateDoc(batchDocRef, {
+          barcodes: mapped.map(b => ({
+            code: b.code,
+            quantity: b.quantity,
+            isValid: !!b.isValid,
+            description: String(b.description || '').toLowerCase().trim(),
+            price: b.price || 0,
+            hasDescription: !!b.hasDescription,
+            hasPrice: !!b.hasPrice,
+            print: b.print !== false
+          })),
+          totalCount: mapped.length,
+          updatedAt: serverTimestamp()
+        });
+        console.log('✅ Eliminación masiva guardada en Firestore');
+      } catch (err) {
+        console.error('Error al actualizar Firestore tras eliminación masiva:', err);
+      }
+    }
+
+    setBarcodes(mapped);
+    setSelectedDeleteIndices([]);
+    setIsBulkDeleteModalOpen(false);
+    setDeleteValidationInput('');
+    if (setIsDirty) setIsDirty(true);
+  };
+
   const generateNextGS1Correlative = async () => {
     if (!user) {
       setIsAuthModalOpen(true);
@@ -622,8 +705,9 @@ export default function BarcodeForm({
       }
     }
 
-    if (inputCode.length !== 13) {
-      setError('El código debe tener 13 dígitos');
+    const isValidFormat = validateBarcode(inputCode, barcodeFormat);
+    if (!isValidFormat) {
+      setError(getErrorMessageForFormat(barcodeFormat));
       setIsValid(false);
       return;
     }
@@ -674,7 +758,7 @@ export default function BarcodeForm({
       return;
     }
 
-    const isValidCode = validateEAN13(inputCode);
+    const isValidCode = validateBarcode(inputCode, barcodeFormat);
     setIsValid(isValidCode);
 
     if (isValidCode) {
@@ -809,6 +893,7 @@ export default function BarcodeForm({
     }
 
     setBarcodes(mapped);
+    setSelectedDeleteIndices(prev => prev.filter(i => i !== index));
   };
 
   return (
@@ -922,6 +1007,70 @@ export default function BarcodeForm({
             </div>
           )}
 
+          {/* Selector de formato de código de barras y Generador de ejemplos */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Formato del lote:
+              </span>
+              {loadedBatchId || barcodes.length > 0 ? (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  backgroundColor: 'var(--bg-tag, #f1f5f9)',
+                  color: 'var(--text-primary, #334155)',
+                  border: '1px solid var(--border-color, #e2e8f0)'
+                }}>
+                  {BARCODE_FORMATS.find(f => f.id === barcodeFormat)?.name || barcodeFormat}
+                </span>
+              ) : (
+                <CustomSelect
+                  options={BARCODE_FORMATS}
+                  value={barcodeFormat}
+                  onChange={setBarcodeFormat}
+                  style={{ width: '280px' }}
+                />
+              )}
+              {(loadedBatchId || barcodes.length > 0) && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  (Formato bloqueado)
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGenerateSampleCodes}
+              disabled={isReadOnly}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+                backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                color: 'var(--primary-color, #4f46e5)',
+                border: '1px solid rgba(79, 70, 229, 0.2)',
+                cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Generar 5 códigos de ejemplo automáticamente"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
+              <span>Generar 5 Ejemplos</span>
+            </button>
+          </div>
+
           {/* Fila principal de entrada */}
           <div className={styles.formCoreRow} id="code-input-container">
             <div className={styles.eanField}>
@@ -931,7 +1080,7 @@ export default function BarcodeForm({
                   type="text"
                   value={inputCode}
                   onChange={handleInputChange}
-                  placeholder="Ingrese el código EAN-13"
+                  placeholder={getPlaceholderForFormat(barcodeFormat)}
                   className={styles.input}
                   disabled={isReadOnly}
                 />
@@ -948,7 +1097,7 @@ export default function BarcodeForm({
                   </svg>
                 </button>
               </div>
-              {user && (
+              {user && barcodeFormat === 'EAN13' && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1467,7 +1616,7 @@ export default function BarcodeForm({
               }
 
               // Ejecutar validación inmediata del código escaneado
-              const isValidCode = validateEAN13(code);
+              const isValidCode = validateBarcode(code, barcodeFormat);
               if (!isValidCode) {
                 setInvalidCodeAttempt(code);
                 setShowInvalidModal(true);
@@ -1577,6 +1726,57 @@ export default function BarcodeForm({
             )}
           </div>
           
+          {/* Barra de acción de borrado masivo cuando hay selección */}
+          {selectedDeleteIndices.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '10px 14px', backgroundColor: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--error-color, #ef4444)' }}>
+                  ⚠️ {selectedDeleteIndices.length} {selectedDeleteIndices.length === 1 ? 'código seleccionado' : 'códigos seleccionados'} para borrado masivo
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeleteIndices([])}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Deseleccionar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteValidationInput('');
+                    setIsBulkDeleteModalOpen(true);
+                  }}
+                  disabled={isReadOnly}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    backgroundColor: 'var(--error-color, #ef4444)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)'
+                  }}
+                >
+                  <span>Eliminar Seleccionados ({selectedDeleteIndices.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+          
           {isListExpanded && (
             <div className={styles.tableContainer}>
               <table className={styles.barcodesTable}>
@@ -1673,7 +1873,34 @@ export default function BarcodeForm({
                       </div>
                     </th>
                     <th className={styles.desktopColumn}>Cantidad</th>
-                    <th className={styles.desktopColumn}>Acciones</th>
+                    <th className={styles.desktopColumn}>
+                      <div className={styles.tableCellWithCheckbox} style={{ justifyContent: 'center' }}>
+                        <input
+                          type="checkbox"
+                          ref={(el) => {
+                            if (el) {
+                              const allChecked = barcodes.length > 0 && selectedDeleteIndices.length === barcodes.length;
+                              const noneChecked = selectedDeleteIndices.length === 0;
+                              el.indeterminate = barcodes.length > 0 && !allChecked && !noneChecked;
+                            }
+                          }}
+                          checked={barcodes.length > 0 && selectedDeleteIndices.length === barcodes.length}
+                          onChange={(e) => {
+                            if (isReadOnly) return;
+                            if (e.target.checked) {
+                              setSelectedDeleteIndices(barcodes.map((_, i) => i));
+                            } else {
+                              setSelectedDeleteIndices([]);
+                            }
+                          }}
+                          disabled={isReadOnly || barcodes.length === 0}
+                          className={styles.tableCheckbox}
+                          title="Seleccionar todos para borrado masivo"
+                          style={{ cursor: isReadOnly ? 'not-allowed' : 'pointer', margin: 0 }}
+                        />
+                        <span className={styles.columnHeaderText}>Acciones</span>
+                      </div>
+                    </th>
                     <th className={styles.mobileArrowHeader} style={{ width: '32px' }}></th>
                   </tr>
                 </thead>
@@ -2065,6 +2292,135 @@ export default function BarcodeForm({
             </div>
           )}
         </div>
+      )}
+
+      {/* Modal de Confirmación de Borrado Masivo */}
+      {isBulkDeleteModalOpen && createPortal(
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '16px'
+          }}
+          onClick={() => setIsBulkDeleteModalOpen(false)}
+        >
+          <div 
+            style={{
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '440px',
+              width: '100%',
+              boxShadow: 'var(--shadow-xl, 0 20px 25px -5px rgba(0, 0, 0, 0.1))',
+              border: '1px solid var(--border-color, #e2e8f0)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: 'var(--error-color, #ef4444)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '20px',
+                flexShrink: 0
+              }}>
+                ⚠️
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-color, #1e293b)' }}>
+                  Confirmar eliminación masiva
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary, #64748b)' }}>
+                  Esta acción eliminará los elementos seleccionados.
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '14px', color: 'var(--text-color, #1e293b)', lineHeight: 1.5, marginBottom: '16px' }}>
+              Estás a punto de eliminar <strong>{selectedDeleteIndices.length}</strong> {selectedDeleteIndices.length === 1 ? 'código' : 'códigos'} del lote actual.
+            </p>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary, #475569)', marginBottom: '6px' }}>
+                Para confirmar, escribe <span style={{ color: 'var(--error-color, #ef4444)', fontWeight: 700 }}>ELIMINAR</span> a continuación:
+              </label>
+              <input
+                type="text"
+                value={deleteValidationInput}
+                onChange={(e) => setDeleteValidationInput(e.target.value)}
+                placeholder="Escribe ELIMINAR"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  fontSize: '14px',
+                  outline: 'none',
+                  backgroundColor: 'var(--background-secondary, #f8fafc)',
+                  color: 'var(--text-color, #1e293b)'
+                }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && deleteValidationInput.trim().toUpperCase() === 'ELIMINAR') {
+                    handleConfirmBulkDelete();
+                  }
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  backgroundColor: 'transparent',
+                  color: 'var(--text-color, #1e293b)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBulkDelete}
+                disabled={deleteValidationInput.trim().toUpperCase() !== 'ELIMINAR'}
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: deleteValidationInput.trim().toUpperCase() === 'ELIMINAR' ? 'var(--error-color, #ef4444)' : 'var(--background-secondary, #cbd5e1)',
+                  color: deleteValidationInput.trim().toUpperCase() === 'ELIMINAR' ? '#ffffff' : 'var(--text-muted, #94a3b8)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: deleteValidationInput.trim().toUpperCase() === 'ELIMINAR' ? 'pointer' : 'not-allowed',
+                  transition: 'background-color 0.2s ease'
+                }}
+              >
+                Confirmar y Eliminar
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

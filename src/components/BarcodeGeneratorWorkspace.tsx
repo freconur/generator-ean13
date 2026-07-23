@@ -82,6 +82,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   const [customCurrencyInput, setCustomCurrencyInput] = useState<string>('');
   const [showCurrencyModal, setShowCurrencyModal] = useState<boolean>(false);
   const [mounted, setMounted] = useState<boolean>(false);
+  const [barcodeFormat, setBarcodeFormat] = useState<string>('EAN13');
 
   // Manejo de SSR
   useEffect(() => {
@@ -137,9 +138,9 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     }
   }, []);
 
-  // Disparar Onboarding automáticamente si es la primera vez
+  // Disparar Onboarding automáticamente si es la primera vez (solo en el Dashboard)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isDashboard) {
       const completed = localStorage.getItem('izicode_onboarding_completed');
       if (!completed) {
         const timer = setTimeout(() => {
@@ -148,7 +149,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         return () => clearTimeout(timer);
       }
     }
-  }, []);
+  }, [isDashboard]);
 
   // Cargar respaldo de invitado desde localStorage
   useEffect(() => {
@@ -161,6 +162,10 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
             setBarcodes(parsed);
             console.log('✅ Recuperados códigos de sesión de invitado desde almacenamiento local.');
           }
+        }
+        const formatBackup = localStorage.getItem('izicode_guest_barcode_format');
+        if (formatBackup) {
+          setBarcodeFormat(formatBackup);
         }
       } catch (err) {
         console.error('Error al recuperar códigos de invitado:', err);
@@ -177,11 +182,12 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         } else {
           localStorage.removeItem('izicode_guest_barcodes');
         }
+        localStorage.setItem('izicode_guest_barcode_format', barcodeFormat);
       } catch (err) {
         console.error('Error al respaldar códigos de invitado:', err);
       }
     }
-  }, [barcodes, user]);
+  }, [barcodes, user, barcodeFormat]);
 
   const [barcodeSettings, setBarcodeSettings] = useState<BarcodeSettings>({
     width: 3,
@@ -304,6 +310,11 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
             if (data.customCurrency) {
               setUseManualCurrency(true);
               setManualCurrencyCode(data.customCurrency);
+            }
+            if (data.barcodeFormat) {
+              setBarcodeFormat(data.barcodeFormat);
+            } else {
+              setBarcodeFormat('EAN13');
             }
             setLoadedBatchId(docSnap.id);
             setLoadedBatchName(data.name || 'Lote');
@@ -475,7 +486,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
   };
 
   // Guardar Lote (Guardar Cambios o Guardar como Nuevo)
-  const handleSaveBatch = async (name?: string, overwrite: boolean = false) => {
+  const handleSaveBatch = async (name?: string, overwrite: boolean = false, format?: string) => {
     if (!user) {
       alert("Por favor inicia sesión para guardar tus lotes.");
       return;
@@ -501,6 +512,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
     try {
       const batchMetadata = {
         name: batchName,
+        barcodeFormat: format || barcodeFormat,
         totalCount: barcodes.length,
         enableDescription,
         enablePrice,
@@ -811,8 +823,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         <CreateBatchModal
           isOpen={isSaveModalOpen}
           onClose={() => setIsSaveModalOpen(false)}
-          onCreate={async (name) => {
-            await handleSaveBatch(name, false);
+          onCreate={async (name, format) => {
+            await handleSaveBatch(name, false, format);
           }}
           defaultName={saveDefaultName}
         />
@@ -820,7 +832,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
         <CreateBatchModal
           isOpen={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
-          onCreate={async (name) => {
+          onCreate={async (name, format) => {
             if (!user) return;
             const maxBatches = isPro ? limits.pro.maxBatches : limits.free.maxBatches;
             if (userBatches.length >= maxBatches) {
@@ -832,6 +844,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
               const newBatchData = {
                 id: newDocRef.id,
                 name: name,
+                barcodeFormat: format,
                 totalCount: 0,
                 enableDescription: false,
                 enablePrice: false,
@@ -839,6 +852,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
                 createdAt: serverTimestamp()
               };
               await setDoc(newDocRef, newBatchData);
+              setBarcodeFormat(format);
               router.push(`/dashboard?batch=${newDocRef.id}`);
             } catch (error) {
               console.error("Error al crear lote vacío:", error);
@@ -858,6 +872,8 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
           setShowPDFPreview={setShowPDFPreview}
           customCurrency={useManualCurrency ? getCurrentCurrency() : undefined}
           barcodeSettings={barcodeSettings}
+          barcodeFormat={barcodeFormat}
+          setBarcodeFormat={setBarcodeFormat}
           onImportCSV={handleImportBarcodes}
           loadedBatchId={loadedBatchId}
           loadedBatchName={loadedBatchName}
@@ -888,6 +904,7 @@ export default function BarcodeGeneratorWorkspace({ isDashboard = false }: { isD
               customCurrency={useManualCurrency ? getCurrentCurrency() : undefined}
               barcodeSettings={barcodeSettings}
               setBarcodeSettings={setBarcodeSettings}
+              barcodeFormat={barcodeFormat}
             />
         </div>
       </div>

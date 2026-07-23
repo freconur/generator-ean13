@@ -1,17 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import styles from '../styles/Home.module.css';
+import CustomSelect from './CustomSelect';
+
+export const BARCODE_FORMATS = [
+  { id: 'EAN13', name: 'EAN-13 (Estándar Retail)', type: '1D' },
+  { id: 'EAN8', name: 'EAN-8 (Retail Compacto)', type: '1D' },
+  { id: 'UPC', name: 'UPC-A (EE.UU. Retail)', type: '1D' },
+  { id: 'CODE128', name: 'Code 128 (Logística y Envíos)', type: '1D' },
+  { id: 'CODE39', name: 'Code 39 (Alfanumérico Industrial)', type: '1D' },
+  { id: 'ITF', name: 'ITF-14 (Embalajes y Distribución)', type: '1D' },
+  { id: 'CODABAR', name: 'Codabar (Bibliotecas y Laboratorios)', type: '1D' },
+  { id: 'QR', name: 'Código QR (2D - Enlaces y Texto)', type: '2D' },
+  { id: 'DATAMATRIX', name: 'Data Matrix (2D - Industrial)', type: '2D' },
+];
 
 interface CreateBatchModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (name: string, format: string) => Promise<void>;
   defaultName?: string;
 }
 
 export default function CreateBatchModal({ isOpen, onClose, onCreate, defaultName }: CreateBatchModalProps) {
   const [mounted, setMounted] = useState(false);
   const [batchName, setBatchName] = useState('');
+  const [barcodeFormat, setBarcodeFormat] = useState('EAN13');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -19,6 +33,7 @@ export default function CreateBatchModal({ isOpen, onClose, onCreate, defaultNam
     setMounted(true);
     if (isOpen) {
       setBatchName(defaultName || '');
+      setBarcodeFormat('EAN13');
       setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
@@ -33,7 +48,7 @@ export default function CreateBatchModal({ isOpen, onClose, onCreate, defaultNam
     if (!trimmed) return;
     setIsSubmitting(true);
     try {
-      await onCreate(trimmed);
+      await onCreate(trimmed, barcodeFormat);
       onClose();
     } catch (error) {
       console.error('Error creating batch:', error);
@@ -72,6 +87,16 @@ export default function CreateBatchModal({ isOpen, onClose, onCreate, defaultNam
               maxLength={100}
               required
               style={{ width: '100%' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              Tipo de código de barras:
+            </label>
+            <CustomSelect
+              options={BARCODE_FORMATS}
+              value={barcodeFormat}
+              onChange={setBarcodeFormat}
             />
           </div>
           <div className={styles.saveButtonsContainer} style={{ marginTop: '8px', justifyContent: 'flex-end', gap: '12px' }}>

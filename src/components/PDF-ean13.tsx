@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import { Page, Text, View, Document, pdf, PDFViewer, Image, Styles, BlobProvider } from '@react-pdf/renderer';
 import JsBarcode from 'jsbarcode';
 import html2canvas from 'html2canvas';
+import bwipjs from 'bwip-js';
 import styles from '../styles/PDF-ean13.module.css';
 import { formatPrice, formatPriceSymbolOnly } from '../utils/formatPrice';
+import { getSampleCodeForFormat, validateBarcode } from '../utils/barcodeValidators';
 
 // Interfaz que define la estructura de un elemento de código de barras
 interface BarcodeItem {
@@ -43,6 +45,7 @@ export interface Props {
 	customCurrency?: string; // Moneda personalizada opcional
 	barcodeSettings: BarcodeSettings;
 	setBarcodeSettings: React.Dispatch<React.SetStateAction<BarcodeSettings>>;
+	barcodeFormat?: string;
 }
 
 // Función para formatear fechas en formato español
@@ -115,7 +118,14 @@ interface BarcodeItemWithImage extends BarcodeItem {
 }
 
 // Componente que define la estructura del documento PDF
-const MyDocument: React.FC<{ barcodes: BarcodeItemWithImage[], settings: BarcodeSettings, enableDescription?: boolean, enablePrice?: boolean, customCurrency?: string }> = ({ barcodes, settings, customCurrency }) => {
+const MyDocument: React.FC<{
+	barcodes: BarcodeItemWithImage[],
+	settings: BarcodeSettings,
+	enableDescription?: boolean,
+	enablePrice?: boolean,
+	customCurrency?: string,
+	barcodeFormat?: string
+}> = ({ barcodes, settings, customCurrency, barcodeFormat = 'EAN13' }) => {
 	// Clasificar los códigos en simples (sin datos a imprimir) y ricos (con descripción o precio a imprimir)
 	const simpleBarcodes = barcodes.filter(item => !item.hasDescription && !item.hasPrice);
 	const richBarcodes = barcodes.filter(item => item.hasDescription || item.hasPrice);
@@ -127,7 +137,10 @@ const MyDocument: React.FC<{ barcodes: BarcodeItemWithImage[], settings: Barcode
 
 		const adjustedMarginVertical = settings.marginVertical;
 		const adjustedMarginHorizontal = settings.marginHorizontal;
-		const adjustedWidth = settings.width * 30;
+		
+		const is2D = barcodeFormat === 'QR' || barcodeFormat === 'DATAMATRIX';
+		const adjustedWidth = is2D ? (settings.width * 20) : (settings.width * 30);
+		const imgHeight = is2D ? (adjustedWidth * 0.8) : (settings.height * 0.3);
 
 		return Array.from({ length: barcode.quantity }).map((_, index) => (
 			<View
@@ -163,7 +176,7 @@ const MyDocument: React.FC<{ barcodes: BarcodeItemWithImage[], settings: Barcode
 					source={`data:image/png;base64,${barcode.imageBase64}`}
 					style={{
 						...pdfStyles.barcodeImage,
-						height: settings.height * 0.3,
+						height: imgHeight,
 						objectFit: 'contain',
 						flexShrink: 0
 					}}
@@ -393,7 +406,8 @@ export const PdfImprimir: React.FC<Props> = ({
 	onTogglePDFPreview,
 	customCurrency,
 	barcodeSettings,
-	setBarcodeSettings
+	setBarcodeSettings,
+	barcodeFormat = 'EAN13'
 }) => {
 	const [showPreview, setShowPreview] = useState(false);
 	const [internalShowPDFPreview, setInternalShowPDFPreview] = useState(false);
@@ -407,6 +421,301 @@ export const PdfImprimir: React.FC<Props> = ({
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [mounted, setMounted] = useState(false);
 	const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+	const [activePreset, setActivePreset] = useState<string>('RETAIL_A4_30');
+
+	const applyPreset = (presetKey: string) => {
+		setActivePreset(presetKey);
+		switch (presetKey) {
+			case 'CODE128_SHIPPING_4X6':
+				setBarcodeSettings({
+					width: 4.0,
+					height: 200,
+					fontSize: 20,
+					marginHorizontal: 15,
+					marginVertical: 20,
+					showNumber: true,
+					generalSpacing: 2,
+					containerHeight: 180,
+					textMargin: 4,
+					descAlign: 'left',
+					descFontSize: 14
+				});
+				break;
+			case 'CODE128_WAREHOUSE_4X3':
+				setBarcodeSettings({
+					width: 3.5,
+					height: 150,
+					fontSize: 18,
+					marginHorizontal: 10,
+					marginVertical: 15,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 130,
+					textMargin: 3,
+					descAlign: 'center',
+					descFontSize: 12
+				});
+				break;
+			case 'CODE128_A4_8PERPAGE':
+				setBarcodeSettings({
+					width: 3.2,
+					height: 130,
+					fontSize: 16,
+					marginHorizontal: 8,
+					marginVertical: 12,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 110,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 11
+				});
+				break;
+			case 'CODE39_INVENTORY_70X36':
+				setBarcodeSettings({
+					width: 3.2,
+					height: 130,
+					fontSize: 18,
+					marginHorizontal: 5,
+					marginVertical: 8,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 90,
+					textMargin: 3,
+					descAlign: 'center',
+					descFontSize: 11
+				});
+				break;
+			case 'CODE39_A4_21':
+				setBarcodeSettings({
+					width: 3.0,
+					height: 110,
+					fontSize: 16,
+					marginHorizontal: 4,
+					marginVertical: 6,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 75,
+					textMargin: 2,
+					descAlign: 'left',
+					descFontSize: 10
+				});
+				break;
+			case 'CODE39_COMPONENT_50X25':
+				setBarcodeSettings({
+					width: 2.5,
+					height: 90,
+					fontSize: 14,
+					marginHorizontal: 2,
+					marginVertical: 4,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 60,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 9
+				});
+				break;
+			case 'ITF_CARTON_150X50':
+				setBarcodeSettings({
+					width: 4.5,
+					height: 200,
+					fontSize: 22,
+					marginHorizontal: 15,
+					marginVertical: 20,
+					showNumber: true,
+					generalSpacing: 2,
+					containerHeight: 160,
+					textMargin: 5,
+					descAlign: 'center',
+					descFontSize: 14
+				});
+				break;
+			case 'ITF_BOX_100X50':
+				setBarcodeSettings({
+					width: 3.8,
+					height: 150,
+					fontSize: 18,
+					marginHorizontal: 10,
+					marginVertical: 12,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 120,
+					textMargin: 4,
+					descAlign: 'left',
+					descFontSize: 12
+				});
+				break;
+			case 'CODABAR_LIBRARY_70X30':
+				setBarcodeSettings({
+					width: 3.0,
+					height: 100,
+					fontSize: 18,
+					marginHorizontal: 4,
+					marginVertical: 6,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 70,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 10
+				});
+				break;
+			case 'CODABAR_BLOOD_50X20':
+				setBarcodeSettings({
+					width: 2.2,
+					height: 80,
+					fontSize: 14,
+					marginHorizontal: 2,
+					marginVertical: 3,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 50,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 8
+				});
+				break;
+			case 'QR_STICKER_50X50':
+				setBarcodeSettings({
+					width: 2.5,
+					height: 120,
+					fontSize: 12,
+					marginHorizontal: 8,
+					marginVertical: 8,
+					showNumber: false,
+					generalSpacing: 1,
+					containerHeight: 100,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 11
+				});
+				break;
+			case 'QR_PRODUCT_35X35':
+				setBarcodeSettings({
+					width: 1.8,
+					height: 80,
+					fontSize: 10,
+					marginHorizontal: 4,
+					marginVertical: 4,
+					showNumber: false,
+					generalSpacing: 1,
+					containerHeight: 70,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 9
+				});
+				break;
+			case 'DATAMATRIX_PART_40X40':
+				setBarcodeSettings({
+					width: 2.0,
+					height: 90,
+					fontSize: 11,
+					marginHorizontal: 5,
+					marginVertical: 5,
+					showNumber: false,
+					generalSpacing: 1,
+					containerHeight: 80,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 10
+				});
+				break;
+			case 'DATAMATRIX_PHARMA_25X25':
+				setBarcodeSettings({
+					width: 1.4,
+					height: 60,
+					fontSize: 8,
+					marginHorizontal: 2,
+					marginVertical: 2,
+					showNumber: false,
+					generalSpacing: 1,
+					containerHeight: 50,
+					textMargin: 1,
+					descAlign: 'center',
+					descFontSize: 8
+				});
+				break;
+			case 'RETAIL_MICRO_65':
+				setBarcodeSettings({
+					width: 2.0,
+					height: 75,
+					fontSize: 16,
+					marginHorizontal: 2,
+					marginVertical: 2,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 45,
+					textMargin: 1,
+					descAlign: 'center',
+					descFontSize: 8
+				});
+				break;
+			case 'RETAIL_A4_30':
+				setBarcodeSettings({
+					width: 3,
+					height: 110,
+					fontSize: 24,
+					marginHorizontal: 0,
+					marginVertical: 0,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 60,
+					textMargin: 2,
+					descAlign: 'center',
+					descFontSize: 10
+				});
+				break;
+			case 'RETAIL_A4_24':
+				setBarcodeSettings({
+					width: 3.5,
+					height: 130,
+					fontSize: 24,
+					marginHorizontal: 4,
+					marginVertical: 6,
+					showNumber: true,
+					generalSpacing: 1,
+					containerHeight: 80,
+					textMargin: 3,
+					descAlign: 'center',
+					descFontSize: 12
+				});
+				break;
+			default:
+				break;
+		}
+	};
+
+	useEffect(() => {
+		switch (barcodeFormat) {
+			case 'CODE128':
+				applyPreset('CODE128_WAREHOUSE_4X3');
+				break;
+			case 'CODE39':
+				applyPreset('CODE39_INVENTORY_70X36');
+				break;
+			case 'ITF':
+				applyPreset('ITF_BOX_100X50');
+				break;
+			case 'CODABAR':
+				applyPreset('CODABAR_LIBRARY_70X30');
+				break;
+			case 'QR':
+				applyPreset('QR_STICKER_50X50');
+				break;
+			case 'DATAMATRIX':
+				applyPreset('DATAMATRIX_PART_40X40');
+				break;
+			case 'EAN8':
+				applyPreset('RETAIL_MICRO_65');
+				break;
+			case 'EAN13':
+			case 'UPC':
+			default:
+				applyPreset('RETAIL_A4_30');
+				break;
+		}
+	}, [barcodeFormat]);
 
 	// Estados debounced para evitar regenerar el PDF en cada pulsación de tecla o cambio de slider
 	const [debouncedBarcodes, setDebouncedBarcodes] = useState(barcodes);
@@ -468,57 +777,78 @@ export const PdfImprimir: React.FC<Props> = ({
 			try {
 				for (const barcode of barcodes) {
 					if (!images[barcode.code]) {
-						const canvas = document.createElement('canvas');
-						const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+						if (barcodeFormat === 'QR' || barcodeFormat === 'DATAMATRIX') {
+							const bcid = barcodeFormat === 'QR' ? 'qrcode' : 'datamatrix';
+							const canvasTmp = document.createElement('canvas');
+							await new Promise<void>((resolve, reject) => {
+								try {
+									bwipjs.toCanvas(canvasTmp, {
+										bcid: bcid,
+										text: barcode.code,
+										scale: 4,
+										includetext: false,
+									});
+									const pngData = canvasTmp.toDataURL('image/png', 1.0);
+									images[barcode.code] = pngData.split(',')[1];
+									resolve();
+								} catch (err) {
+									console.error('Error generando 2D con bwip-js:', err);
+									reject(err);
+								}
+							});
+						} else {
+							const canvas = document.createElement('canvas');
+							const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 
-						JsBarcode(svg, barcode.code, {
-							format: 'EAN13',
-							width: barcodeSettings.width,
-							height: barcodeSettings.height,
-							displayValue: barcodeSettings.showNumber, // Usar el nuevo estado
-							fontSize: barcodeSettings.fontSize,
-							margin: 0,
-							textMargin: barcodeSettings.textMargin, // Margen entre código y número
-							background: '#ffffff',
-							lineColor: '#000000',
-							valid: () => true
-						});
+							JsBarcode(svg, barcode.code, {
+								format: barcodeFormat === 'UPC' ? 'UPC' : barcodeFormat,
+								width: barcodeSettings.width,
+								height: barcodeSettings.height,
+								displayValue: barcodeSettings.showNumber,
+								fontSize: barcodeSettings.fontSize,
+								margin: 0,
+								textMargin: barcodeSettings.textMargin,
+								background: '#ffffff',
+								lineColor: '#000000',
+								valid: () => true
+							});
 
-						// Ajustar el espacio del primer dígito para acercarlo a las barras
-						try {
-							const textElements = svg.querySelectorAll('text');
-							if (textElements && textElements.length > 0) {
-								const firstText = textElements[0];
-								const currentX = parseFloat(firstText.getAttribute('x') || '0');
-								// Desplazamiento proporcional al ancho de línea (width)
-								const shift = barcodeSettings.width * 4;
-								firstText.setAttribute('x', (currentX + shift).toString());
+							if (barcodeFormat === 'EAN13') {
+								try {
+									const textElements = svg.querySelectorAll('text');
+									if (textElements && textElements.length > 0) {
+										const firstText = textElements[0];
+										const currentX = parseFloat(firstText.getAttribute('x') || '0');
+										const shift = barcodeSettings.width * 4;
+										firstText.setAttribute('x', (currentX + shift).toString());
+									}
+								} catch (e) {
+									console.warn('Error al ajustar el primer dígito EAN-13:', e);
+								}
 							}
-						} catch (e) {
-							console.warn('Error al ajustar el primer dígito EAN-13:', e);
+
+							document.body.appendChild(svg);
+							const svgData = new XMLSerializer().serializeToString(svg);
+							const img = document.createElement('img');
+							img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+
+							await new Promise((resolve) => {
+								img.onload = async () => {
+									canvas.width = img.width * 2;
+									canvas.height = img.height * 2;
+									const ctx = canvas.getContext('2d');
+									ctx!.imageSmoothingEnabled = true;
+									ctx!.imageSmoothingQuality = 'high';
+									ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+									const pngData = canvas.toDataURL('image/png', 1.0);
+									images[barcode.code] = pngData.split(',')[1];
+
+									document.body.removeChild(svg);
+									resolve(null);
+								};
+							});
 						}
-
-						document.body.appendChild(svg);
-						const svgData = new XMLSerializer().serializeToString(svg);
-						const img = document.createElement('img');
-						img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
-
-						await new Promise((resolve) => {
-							img.onload = async () => {
-								canvas.width = img.width * 2;
-								canvas.height = img.height * 2;
-								const ctx = canvas.getContext('2d');
-								ctx!.imageSmoothingEnabled = true;
-								ctx!.imageSmoothingQuality = 'high';
-								ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-								const pngData = canvas.toDataURL('image/png', 1.0);
-								images[barcode.code] = pngData.split(',')[1];
-
-								document.body.removeChild(svg);
-								resolve(null);
-							};
-						});
 					}
 				}
 
@@ -534,57 +864,77 @@ export const PdfImprimir: React.FC<Props> = ({
 		if (barcodes.length > 0) {
 			generateBarcodeImages();
 		}
-	}, [barcodes, barcodeSettings]);
+	}, [barcodes, barcodeSettings, barcodeFormat]);
 
 	// Efecto para generar la vista previa del código de barras
 	useEffect(() => {
-		const generatePreview = () => {
+		const generatePreview = async () => {
 			try {
-				const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-				const exampleCode = '4006381333931';
+				const exampleCode = getSampleCodeForFormat(barcodeFormat);
 
-				if (!isValidEAN13(exampleCode)) {
-					throw new Error('Código EAN-13 inválido');
-				}
+				if (barcodeFormat === 'QR' || barcodeFormat === 'DATAMATRIX') {
+					const bcid = barcodeFormat === 'QR' ? 'qrcode' : 'datamatrix';
+					const canvasTmp = document.createElement('canvas');
+					await new Promise<void>((resolve, reject) => {
+						try {
+							bwipjs.toCanvas(canvasTmp, {
+								bcid: bcid,
+								text: exampleCode,
+								scale: 4,
+								includetext: false,
+							});
+							const pngData = canvasTmp.toDataURL('image/png');
+							setPreviewImage(pngData);
+							setPreviewError('');
+							resolve();
+						} catch (err) {
+							console.error('Error generando vista previa 2D con bwip-js:', err);
+							reject(err);
+						}
+					});
+				} else {
+					const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 
-				JsBarcode(svg, exampleCode, {
-					format: 'EAN13',
-					width: barcodeSettings.width,
-					height: barcodeSettings.height,
-					displayValue: barcodeSettings.showNumber, // Usar el nuevo estado
-					fontSize: barcodeSettings.fontSize,
-					margin: 0,
-					textMargin: barcodeSettings.textMargin // Margen entre código y número
-				});
+					JsBarcode(svg, exampleCode, {
+						format: barcodeFormat === 'UPC' ? 'UPC' : barcodeFormat,
+						width: barcodeSettings.width,
+						height: barcodeSettings.height,
+						displayValue: barcodeSettings.showNumber,
+						fontSize: barcodeSettings.fontSize,
+						margin: 0,
+						textMargin: barcodeSettings.textMargin
+					});
 
-				// Ajustar el espacio del primer dígito para acercarlo a las barras en la vista previa del componente
-				try {
-					const textElements = svg.querySelectorAll('text');
-					if (textElements && textElements.length > 0) {
-						const firstText = textElements[0];
-						const currentX = parseFloat(firstText.getAttribute('x') || '0');
-						const shift = barcodeSettings.width * 4;
-						firstText.setAttribute('x', (currentX + shift).toString());
+					if (barcodeFormat === 'EAN13') {
+						try {
+							const textElements = svg.querySelectorAll('text');
+							if (textElements && textElements.length > 0) {
+								const firstText = textElements[0];
+								const currentX = parseFloat(firstText.getAttribute('x') || '0');
+								const shift = barcodeSettings.width * 4;
+								firstText.setAttribute('x', (currentX + shift).toString());
+							}
+						} catch (e) {
+							console.warn('Error al ajustar el primer dígito EAN-13 en vista previa:', e);
+						}
 					}
-				} catch (e) {
-					console.warn('Error al ajustar el primer dígito EAN-13 en vista previa:', e);
+
+					const svgData = new XMLSerializer().serializeToString(svg);
+					const img = document.createElement('img');
+					img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+
+					img.onload = () => {
+						const canvas = document.createElement('canvas');
+						canvas.width = img.width;
+						canvas.height = img.height;
+						const ctx = canvas.getContext('2d');
+						ctx?.drawImage(img, 0, 0);
+
+						const pngData = canvas.toDataURL('image/png');
+						setPreviewImage(pngData);
+						setPreviewError('');
+					};
 				}
-
-				const svgData = new XMLSerializer().serializeToString(svg);
-				const img = document.createElement('img');
-				img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
-
-				img.onload = () => {
-					const canvas = document.createElement('canvas');
-					canvas.width = img.width;
-					canvas.height = img.height;
-					const ctx = canvas.getContext('2d');
-					ctx?.drawImage(img, 0, 0);
-
-					const pngData = canvas.toDataURL('image/png');
-					setPreviewImage(pngData);
-					setPreviewError('');
-				};
 			} catch (error) {
 				setPreviewError('Error al generar la vista previa');
 				setPreviewImage('');
@@ -592,7 +942,7 @@ export const PdfImprimir: React.FC<Props> = ({
 		};
 
 		generatePreview();
-	}, [barcodeSettings]);
+	}, [barcodeSettings, barcodeFormat]);
 
 	const handleSettingsChange = <K extends keyof BarcodeSettings>(setting: K, value: BarcodeSettings[K]) => {
 		setBarcodeSettings(prev => ({
@@ -635,6 +985,7 @@ export const PdfImprimir: React.FC<Props> = ({
 					enableDescription={enableDescription}
 					enablePrice={enablePrice}
 					customCurrency={customCurrency}
+					barcodeFormat={barcodeFormat}
 				/>
 			).toBlob();
 
@@ -717,6 +1068,414 @@ export const PdfImprimir: React.FC<Props> = ({
 					>
 						Restablecer
 					</button>
+				</div>
+
+				{/* Plantillas / Presets de Impresión */}
+				<div style={{ marginBottom: '1.5rem', backgroundColor: 'var(--background-secondary, #f8fafc)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+					<div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-color)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+							<line x1="3" y1="9" x2="21" y2="9" />
+							<line x1="9" y1="21" x2="9" y2="9" />
+						</svg>
+						<span>Plantillas Rápidas ({barcodeFormat})</span>
+					</div>
+
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+						{barcodeFormat === 'CODE128' && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODE128_SHIPPING_4X6')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODE128_SHIPPING_4X6' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODE128_SHIPPING_4X6' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODE128_SHIPPING_4X6' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📦 Envío E-commerce (4x6" / 100x150mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Térmica</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODE128_WAREHOUSE_4X3')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODE128_WAREHOUSE_4X3' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODE128_WAREHOUSE_4X3' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODE128_WAREHOUSE_4X3' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>🏷️ Rotulado Almacén (100x75mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Térmica / Hoja</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODE128_A4_8PERPAGE')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODE128_A4_8PERPAGE' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODE128_A4_8PERPAGE' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODE128_A4_8PERPAGE' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📄 Hoja A4 Logística (8 por hoja)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>A4 Adhesivo</span>
+								</button>
+							</>
+						)}
+
+						{barcodeFormat === 'CODE39' && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODE39_INVENTORY_70X36')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODE39_INVENTORY_70X36' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODE39_INVENTORY_70X36' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODE39_INVENTORY_70X36' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>🏭 Placa Inventario (70x36mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Activos Fijos</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODE39_A4_21')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODE39_A4_21' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODE39_A4_21' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODE39_A4_21' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📄 Avery 21 por Hoja A4</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>A4 Standard</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODE39_COMPONENT_50X25')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODE39_COMPONENT_50X25' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODE39_COMPONENT_50X25' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODE39_COMPONENT_50X25' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📦 Rotulado Componente (50x25mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Compacto</span>
+								</button>
+							</>
+						)}
+
+						{barcodeFormat === 'ITF' && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('ITF_CARTON_150X50')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'ITF_CARTON_150X50' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'ITF_CARTON_150X50' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'ITF_CARTON_150X50' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📦 Faja Caja Máster (150x50mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Cartón Cajas</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('ITF_BOX_100X50')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'ITF_BOX_100X50' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'ITF_BOX_100X50' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'ITF_BOX_100X50' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>🏷️ Etiqueta Embalaje (100x50mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Distribución</span>
+								</button>
+							</>
+						)}
+
+						{barcodeFormat === 'CODABAR' && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODABAR_LIBRARY_70X30')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODABAR_LIBRARY_70X30' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODABAR_LIBRARY_70X30' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODABAR_LIBRARY_70X30' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📚 Ficha Biblioteca (70x30mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Libros / Archivo</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('CODABAR_BLOOD_50X20')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'CODABAR_BLOOD_50X20' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'CODABAR_BLOOD_50X20' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'CODABAR_BLOOD_50X20' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>🩸 Tubo de Ensayo (50x20mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Laboratorio</span>
+								</button>
+							</>
+						)}
+
+						{barcodeFormat === 'QR' && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('QR_STICKER_50X50')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'QR_STICKER_50X50' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'QR_STICKER_50X50' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'QR_STICKER_50X50' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📱 Sticker Mediano (50x50mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Mesas / Redes</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('QR_PRODUCT_35X35')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'QR_PRODUCT_35X35' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'QR_PRODUCT_35X35' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'QR_PRODUCT_35X35' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>🏷️ Sticker Producto (35x35mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>35 por Hoja</span>
+								</button>
+							</>
+						)}
+
+						{barcodeFormat === 'DATAMATRIX' && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('DATAMATRIX_PART_40X40')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'DATAMATRIX_PART_40X40' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'DATAMATRIX_PART_40X40' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'DATAMATRIX_PART_40X40' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>⚙️ Marcado Componente (40x40mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>Industrial</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('DATAMATRIX_PHARMA_25X25')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'DATAMATRIX_PHARMA_25X25' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'DATAMATRIX_PHARMA_25X25' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'DATAMATRIX_PHARMA_25X25' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>💊 Micro-Etiqueta Farma (25x25mm)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>70 por Hoja</span>
+								</button>
+							</>
+						)}
+
+						{(barcodeFormat === 'EAN13' || barcodeFormat === 'EAN8' || barcodeFormat === 'UPC') && (
+							<>
+								<button
+									type="button"
+									onClick={() => applyPreset('RETAIL_A4_30')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'RETAIL_A4_30' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'RETAIL_A4_30' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'RETAIL_A4_30' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>🏷️ Avery 30 por Hoja A4 (Góndola)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>A4 Standard</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => applyPreset('RETAIL_A4_24')}
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'space-between',
+										padding: '8px 10px',
+										borderRadius: '6px',
+										border: '1px solid var(--border-color, #e2e8f0)',
+										backgroundColor: activePreset === 'RETAIL_A4_24' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+										color: activePreset === 'RETAIL_A4_24' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+										fontSize: '12px',
+										fontWeight: activePreset === 'RETAIL_A4_24' ? 600 : 500,
+										cursor: 'pointer',
+										textAlign: 'left'
+									}}
+								>
+									<span>📄 Avery 24 por Hoja A4 (Detallado)</span>
+									<span style={{ fontSize: '10px', opacity: 0.7 }}>A4 Grande</span>
+								</button>
+								{barcodeFormat === 'EAN8' && (
+									<button
+										type="button"
+										onClick={() => applyPreset('RETAIL_MICRO_65')}
+										style={{
+											display: 'flex',
+											alignItems: 'center',
+											justifyContent: 'space-between',
+											padding: '8px 10px',
+											borderRadius: '6px',
+											border: '1px solid var(--border-color, #e2e8f0)',
+											backgroundColor: activePreset === 'RETAIL_MICRO_65' ? 'rgba(79, 70, 229, 0.12)' : 'var(--card-bg, #ffffff)',
+											color: activePreset === 'RETAIL_MICRO_65' ? 'var(--primary-color, #4f46e5)' : 'var(--text-color, #1e293b)',
+											fontSize: '12px',
+											fontWeight: activePreset === 'RETAIL_MICRO_65' ? 600 : 500,
+											cursor: 'pointer',
+											textAlign: 'left'
+										}}
+									>
+										<span>🔬 Avery 65 por Hoja A4 (Micro)</span>
+										<span style={{ fontSize: '10px', opacity: 0.7 }}>A4 Pequeño</span>
+									</button>
+								)}
+							</>
+						)}
+					</div>
 				</div>
 
 				<div className={styles.settingGroup}>
@@ -891,6 +1650,7 @@ export const PdfImprimir: React.FC<Props> = ({
 										enableDescription={debouncedEnableDescription}
 										enablePrice={debouncedEnablePrice}
 										customCurrency={customCurrency}
+										barcodeFormat={barcodeFormat}
 									/>
 								}
 							>
